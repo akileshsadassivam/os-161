@@ -100,7 +100,6 @@ void lock_release(struct lock *);
 bool lock_do_i_hold(struct lock *);
 void lock_destroy(struct lock *);
 
-
 /*
  * Condition variable.
  *
@@ -119,6 +118,9 @@ struct cv {
         char *cv_name;
         // add what you need here
         // (don't forget to mark things volatile as needed)
+	struct wchan *cv_wchan;
+	struct spinlock cv_lock;
+	volatile bool cv_var;
 };
 
 struct cv *cv_create(const char *name);
