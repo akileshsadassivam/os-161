@@ -345,37 +345,40 @@ rwlock_create(const char *name){
 		return NULL;
 	}
 
-	rwlock->rwlock_name = kstrdup(name);
-	if(rwlock->rwlock_name == NULL){
+	rwlock->rwlk_name = kstrdup(name);
+	if(rwlock->rwlk_name == NULL){
 		kfree(rwlock);
 		return NULL;
 	} 
 
-	rwlock->rwlock_rwchan = wchan_create(rwlock->rwlock_name);
-	if(rwlock->wchan == NULL){
-		kfree(rwlock->rwlock_name);
+	rwlock->rwlk_rwchan = wchan_create(rwlock->rwlk_name);
+	if(rwlock->rwlk_rwchan == NULL){
+		kfree(rwlock->rwlk_name);
 		kfree(rwlock);
 		return NULL;
 	}
 
-	rwlock->rwlock_wwchan = wchan_create(rwlock->rwlock_name);
-	if(rwlock->wwchan == NULL){
-		kfree(rwlock->rwlock_name);
-		wchan_destroy(rwlock->rwlock_rwchan);
+	rwlock->rwlk_wwchan = wchan_create(rwlock->rwlk_name);
+	if(rwlock->rwlk_wwchan == NULL){
+		kfree(rwlock->rwlk_name);
+		wchan_destroy(rwlock->rwlk_rwchan);
 		kfree(rwlock);
 		return NULL;
 	}
 
-	rwlock->lock = lock_create("lock");
-	if(rwlock->lock == NULL){
-		kfree(rwlock->rwlock_name);
-		wchan_destroy(rwlock->rwlock_rwchan);
-		wchan_destroy(rwlock->rwlock_wwchan);
+	rwlock->rwlk_lock = lock_create("lock");
+	if(rwlock->rwlk_lock == NULL){
+		kfree(rwlock->rwlk_name);
+		wchan_destroy(rwlock->rwlk_rwchan);
+		wchan_destroy(rwlock->rwlk_wwchan);
 		kfree(rwlock);
 		return NULL;
 	}
 
-	spinlock_init(&rwlock_rwlock_spin);
+	spinlock_init(&rwlock->rwlk_spin);
+	rwlock->rwlk_rcount = 0;
+	rwlock->rwlk_wcount = 0;
+	rwlock->rwlk_prevrelease = false;
 
 	return rwlock;
 }
@@ -384,11 +387,11 @@ void
 rwlock_destroy(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 
-	kfree(rwlock->rwlock_name);
-	wchan_destroy(rwlock->rwlock_rwchan);
-	wchan_destroy(rwlock->rwlock_wwchan);
-	spinlock_cleanup(&rwlock->rwlock_spin);
-	lock_destroy(rwlock->rwlock_lock);
+	kfree(rwlock->rwlk_name);
+	wchan_destroy(rwlock->rwlk_rwchan);
+	wchan_destroy(rwlock->rwlk_wwchan);
+	spinlock_cleanup(&rwlock->rwlk_spin);
+	lock_destroy(rwlock->rwlk_lock);
 	kfree(rwlock);
 }
 
@@ -396,51 +399,107 @@ void
 rwlock_acquire_read(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 
-	spinlock_acquire(&rwlock->rwlock_spin);
-	while(rwlock->lock->isLocked == true) {
-		wchan_lock(rwlock->rwlock_rwchan);
-		spinlock_release(&rwlock->rwlock_spin);
-		wchan_sleep(rwlock->rwlock_rwchan);
+	spinlock_acquire(&rwlock->rwlk_spin);
+	
+	/*reader should wait in the following conditions:
+	1. if writer is accessing the resource (in this case lock will not be available).
+	2. if writer is waiting and the no of readers currently accessing the resource is beyond
+	   the permissible limit.
+	*/
+	while(rwlock->rwlk_lock->lk_isLocked == true || 
+		(rwlock->rwlk_wcount > 0 && rwlock->rwlk_rcount > 10)) {
+		wchan_lock(rwlock->rwlk_rwchan);
+		spinlock_release(&rwlock->rwlk_spin);
+		wchan_sleep(rwlock->rwlk_rwchan);
 	}
 
-	rwlock->rwlock_rcount++;
-	spinlock_release(&rwlock->rwlock_spin);
+	//increase the count before accessing the resource
+	rwlock->rwlk_rcount++;
+	spinlock_release(&rwlock->rwlk_spin);
 }
 
 void
 rwlock_release_read(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 
-	spinlock_acquire(&rwlock->rwlock_spin);
-	rwlock->rwlock_rcount--;
+	spinlock_acquire(&rwlock->rwlk_spin);
+	//decrement the count when releasing the resource
+	rwlock->rwlk_rcount--;
 	
-	KASSERT(rwlock->rwlock_rcount == 0);
-	wchan_wakeone(rwlock->rwlock_rwchan);
-	spinlock_release(&rwlock->rwlock_spin);
+	//reader should wake any thread only when there is no other reader accessing
+	//the resource
+	KASSERT(rwlock->rwlk_rcount == 0);
+	
+	/*If rwlk_prevrelease value is true (writer was released from wait before), follow these conditions:
+	Check if there are any readers in wait channel. 
+	1. if yes, release one reader (loophole)???????
+	2. else release one for write
+	If rwlk_prevrelease value is false (reader was released before), check if there are any writers waiting
+	1. if yes, release one writer
+	2. else release all readers */
+ 
+	if(rwlock->rwlk_prevrelease){
+		//what ll u do if there is no reader waiting n many writers r waiting??????
+		wchan_wakeone(rwlock->rwlk_rwchan);
+		rwlock->rwlk_prevrelease = false;
+	} else {
+		if(rwlock->rwlk_wcount > 0){
+			wchan_wakeone(rwlock->rwlk_wwchan);
+			rwlock->rwlk_prevrelease = true;
+		} else {
+			wchan_wakeall(rwlock->rwlk_rwchan);
+			rwlock->rwlk_prevrelease = false;
+		}
+	}
+
+	spinlock_release(&rwlock->rwlk_spin);
 }
 
 void
 rwlock_acquire_write(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 
-	spinlock_acquire(&rwlock->rwlock_spin);
-	while(rwlock->rwlock_rcount > 0){
-		wchan_lock(rwlock->rwlock_wwchan);
-		spinlock_release(&rwlock->rwlock_spin);
-		wchan_sleep(rwlock->rwlock_wwchan);
+	spinlock_acquire(&rwlock->rwlk_spin);
 
-		spinlock_acquire(&rwlock->rwlock_spin);
+	//writer should wait if there is any reader accessing the resource
+	while(rwlock->rwlk_rcount > 0){
+		wchan_lock(rwlock->rwlk_wwchan);
+		//increase the counter if waiting
+		rwlock->rwlk_wcount++;
+		spinlock_release(&rwlock->rwlk_spin);
+		wchan_sleep(rwlock->rwlk_wwchan);
+
+		spinlock_acquire(&rwlock->rwlk_spin);
 	}
 
-	lock_acquire(rwlock->rwlock_lock);
-	spinlock_release(&rwlock->rwlock_spin);	
+	lock_acquire(rwlock->rwlk_lock);
+
+	//decrement the count once awaken from sleep
+	rwlock->rwlk_wcount--;
+	spinlock_release(&rwlock->rwlk_spin);	
 }
 
 void
 rwlock_release_write(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 
-	spinlock_acquire(&rwlock->rwlock_spin);
-	wchan_wakeone(rwlock->rwlock_wwchan);
-	spinlock_release(&rwlock->rwlock_spin);
+	spinlock_acquire(&rwlock->rwlk_spin);
+
+	/*No need to check for rwlk_prevrelease because if writer is releasing the lock then
+	there is no probability that a reader will be accessing at the same time nor any writer
+	thread would have been woken before/after this thread. Hence, reader should be waken up
+	at any cost (unless there is no reader).*/	
+	if(/*logic to find no of readers waiting*/){
+		if(rwlock->rwlk_wcount > 0){
+			wchan_wakeone(rwlock->rwlk_rwchan);
+		} else {
+			wchan_wakeall(rwlock->rwlk_rwchan);
+		}
+		rwlock->rwlk_prevrelease = false;
+	} else {
+		wchan_wakeone(rwlock->rwlk_wwchan);
+		rwlock->rwlk_prevrelease = true;
+	}
+
+	spinlock_release(&rwlock->rwlk_spin);
 }

@@ -148,13 +148,14 @@ void cv_broadcast(struct cv *cv, struct lock *lock);
  */
 
 struct rwlock {
-	char *rwlock_name;
-	struct wchan *rwlock_rwchan;
-	struct wchan *rwlock_wwchan;	
-	struct lock *rwlock_lock;
-	struct spinlock *rwlock_spin;
-	volatile int rwlock_rcount;
-	volatile bool rwlock_iswriting;
+	char *rwlk_name;
+	struct wchan *rwlk_rwchan;		//wait channel for readers
+	struct wchan *rwlk_wwchan;		//wait channel for writers
+	struct lock *rwlk_lock;
+	struct spinlock rwlk_spin;
+	volatile int rwlk_rcount;		//counts no of readers currently accessing the resource
+	volatile int rwlk_wcount;		//counts no of writers in wait channel
+	bool rwlk_prevrelease;		//false - read has been released; true - write
 };
 
 struct rwlock * rwlock_create(const char *);
