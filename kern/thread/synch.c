@@ -407,10 +407,12 @@ rwlock_acquire_read(struct rwlock *rwlock){
 	2. if writer is waiting and the no of readers currently accessing the resource is beyond
 	   the permissible limit.
 	*/
-	while(rwlock->rwlk_iswriting ||	(!wchan_isempty(rwlock->rwlk_wwchan) && rwlock->rwlk_rcount > 10)) {
+	while(rwlock->rwlk_iswriting ||	(rwlock->rwlk_rcount > 10 && !wchan_isempty(rwlock->rwlk_wwchan))){ 
 		wchan_lock(rwlock->rwlk_rwchan);
 		spinlock_release(&rwlock->rwlk_spin);
 		wchan_sleep(rwlock->rwlk_rwchan);
+
+		spinlock_acquire(&rwlock->rwlk_spin);
 	}
 
 	//increase the count before accessing the resource
@@ -429,6 +431,7 @@ rwlock_release_read(struct rwlock *rwlock){
 	//reader should wake any thread only when there is no other reader accessing
 	//the resource
 	if(rwlock->rwlk_rcount > 0){
+		spinlock_release(&rwlock->rwlk_spin);
 		return;
 	}
 	
