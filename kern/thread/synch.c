@@ -377,7 +377,7 @@ rwlock_create(const char *name){
 
 	spinlock_init(&rwlock->rwlk_spin);
 	rwlock->rwlk_rcount = 0;
-	rwlock->rwlk_wcount = 0;
+	//rwlock->rwlk_wcount = 0;
 	rwlock->rwlk_prevrelease = false;
 
 	return rwlock;
@@ -407,7 +407,7 @@ rwlock_acquire_read(struct rwlock *rwlock){
 	   the permissible limit.
 	*/
 	while(rwlock->rwlk_lock->lk_isLocked == true || 
-		(rwlock->rwlk_wcount > 0 && rwlock->rwlk_rcount > 10)) {
+		(!wchan_isempty(rwlock->rwlk_wwchan) && rwlock->rwlk_rcount > 10)) {
 		wchan_lock(rwlock->rwlk_rwchan);
 		spinlock_release(&rwlock->rwlk_spin);
 		wchan_sleep(rwlock->rwlk_rwchan);
@@ -439,11 +439,17 @@ rwlock_release_read(struct rwlock *rwlock){
 	2. else release all readers */
  
 	if(rwlock->rwlk_prevrelease){
-		//what ll u do if there is no reader waiting n many writers r waiting??????
-		wchan_wakeone(rwlock->rwlk_rwchan);
-		rwlock->rwlk_prevrelease = false;
+		if(!wchan_isempty(rwlock->rwlk_rwchan)){
+			//should also check if there is any writer waiting. if so release only one to
+			//prevent starvation.
+			(wchan_isempty(rwlock->rwlk_wwchan)) ? wchan_wakeall(rwlock->rwlk_rwchan) : wchan_wakeone(rwlock->rwlk_rwchan);
+			rwlock->rwlk_prevrelease = false;
+		} else {
+			wchan_wakeone(rwlock->rwlk_wwchan);
+			rwlock->rwlk_prevrelease = true;
+		}
 	} else {
-		if(rwlock->rwlk_wcount > 0){
+		if(!wchan_isempty(rwlock->rwlk_wwchan)){
 			wchan_wakeone(rwlock->rwlk_wwchan);
 			rwlock->rwlk_prevrelease = true;
 		} else {
@@ -465,7 +471,7 @@ rwlock_acquire_write(struct rwlock *rwlock){
 	while(rwlock->rwlk_rcount > 0){
 		wchan_lock(rwlock->rwlk_wwchan);
 		//increase the counter if waiting
-		rwlock->rwlk_wcount++;
+		//rwlock->rwlk_wcount++;
 		spinlock_release(&rwlock->rwlk_spin);
 		wchan_sleep(rwlock->rwlk_wwchan);
 
@@ -475,7 +481,7 @@ rwlock_acquire_write(struct rwlock *rwlock){
 	lock_acquire(rwlock->rwlk_lock);
 
 	//decrement the count once awaken from sleep
-	rwlock->rwlk_wcount--;
+	//rwlock->rwlk_wcount--;
 	spinlock_release(&rwlock->rwlk_spin);	
 }
 
@@ -489,12 +495,9 @@ rwlock_release_write(struct rwlock *rwlock){
 	there is no probability that a reader will be accessing at the same time nor any writer
 	thread would have been woken before/after this thread. Hence, reader should be waken up
 	at any cost (unless there is no reader).*/	
-	if(/*logic to find no of readers waiting*/){
-		if(rwlock->rwlk_wcount > 0){
-			wchan_wakeone(rwlock->rwlk_rwchan);
-		} else {
-			wchan_wakeall(rwlock->rwlk_rwchan);
-		}
+	if(!wchan_isempty(rwlock->rwlk_rwchan)){
+		//Check if any writer is waiting else wake all readers
+		(!wchan_isempty(rwlock->rwlk_wwchan)) ? wchan_wakeone(rwlock->rwlk_rwchan) : wchan_wakeall(rwlock->rwlk_rwchan);
 		rwlock->rwlk_prevrelease = false;
 	} else {
 		wchan_wakeone(rwlock->rwlk_wwchan);
