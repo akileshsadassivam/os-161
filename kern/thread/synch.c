@@ -377,6 +377,7 @@ rwlock_create(const char *name){
 
 	spinlock_init(&rwlock->rwlk_spin);
 	rwlock->rwlk_rcount = 0;
+	rwlock->rwlk_iswriting = false;
 	//rwlock->rwlk_wcount = 0;
 	rwlock->rwlk_prevrelease = false;
 
@@ -406,8 +407,7 @@ rwlock_acquire_read(struct rwlock *rwlock){
 	2. if writer is waiting and the no of readers currently accessing the resource is beyond
 	   the permissible limit.
 	*/
-	while(rwlock->rwlk_lock->lk_isLocked == true || 
-		(!wchan_isempty(rwlock->rwlk_wwchan) && rwlock->rwlk_rcount > 10)) {
+	while(rwlock->rwlk_iswriting ||	(!wchan_isempty(rwlock->rwlk_wwchan) && rwlock->rwlk_rcount > 10)) {
 		wchan_lock(rwlock->rwlk_rwchan);
 		spinlock_release(&rwlock->rwlk_spin);
 		wchan_sleep(rwlock->rwlk_rwchan);
@@ -428,7 +428,9 @@ rwlock_release_read(struct rwlock *rwlock){
 	
 	//reader should wake any thread only when there is no other reader accessing
 	//the resource
-	KASSERT(rwlock->rwlk_rcount == 0);
+	if(rwlock->rwlk_rcount > 0){
+		return;
+	}
 	
 	/*If rwlk_prevrelease value is true (writer was released from wait before), follow these conditions:
 	Check if there are any readers in wait channel. 
@@ -468,7 +470,7 @@ rwlock_acquire_write(struct rwlock *rwlock){
 	spinlock_acquire(&rwlock->rwlk_spin);
 
 	//writer should wait if there is any reader accessing the resource
-	while(rwlock->rwlk_rcount > 0){
+	while(rwlock->rwlk_rcount > 0 || rwlock->rwlk_iswriting){
 		wchan_lock(rwlock->rwlk_wwchan);
 		//increase the counter if waiting
 		//rwlock->rwlk_wcount++;
@@ -478,7 +480,8 @@ rwlock_acquire_write(struct rwlock *rwlock){
 		spinlock_acquire(&rwlock->rwlk_spin);
 	}
 
-	lock_acquire(rwlock->rwlk_lock);
+	rwlock->rwlk_iswriting = true;
+	//lock_acquire(rwlock->rwlk_lock);
 
 	//decrement the count once awaken from sleep
 	//rwlock->rwlk_wcount--;
@@ -490,6 +493,8 @@ rwlock_release_write(struct rwlock *rwlock){
 	KASSERT(rwlock != NULL);
 
 	spinlock_acquire(&rwlock->rwlk_spin);
+	rwlock->rwlk_iswriting = false;
+	//lock_release(rwlock->rwlk_lock);
 
 	/*No need to check for rwlk_prevrelease because if writer is releasing the lock then
 	there is no probability that a reader will be accessing at the same time nor any writer

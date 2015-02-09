@@ -154,7 +154,8 @@ struct rwlock {
 	struct lock *rwlk_lock;
 	struct spinlock rwlk_spin;
 	volatile int rwlk_rcount;		//counts no of readers currently accessing the resource
-	volatile int rwlk_wcount;		//counts no of writers in wait channel
+	//volatile int rwlk_wcount;		//counts no of writers in wait channel
+	volatile bool rwlk_iswriting;
 	bool rwlk_prevrelease;		//false - read has been released; true - write
 };
 
