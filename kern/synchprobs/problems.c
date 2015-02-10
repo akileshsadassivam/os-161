@@ -36,6 +36,16 @@
 #include <test.h>
 #include <synch.h>
 
+int maleCount;
+int femaleCount;
+int matchCount;
+struct lock *lock;
+//struct lock *female_lock;
+//struct lock *match_lock;
+struct cv *male_cv;
+struct cv *female_cv;
+struct cv *match_cv;
+
 /*
  * 08 Feb 2012 : GWA : Driver code is in kern/synchprobs/driver.c. We will
  * replace that file. This file is yours to modify as you see fit.
@@ -48,7 +58,17 @@
 // the top of the corresponding driver code.
 
 void whalemating_init() {
-  return;
+	maleCount = 0;
+	femaleCount = 0;
+	matchCount = 0;
+
+	lock = lock_create("male lock");
+	//female_lock = lock_create("female lock");
+	//match_lock = lock_create("match lock");
+	male_cv = cv_create("male cv");
+	female_cv = cv_create("female cv");
+	match_cv = cv_create("match cv");
+	return;
 }
 
 // 20 Feb 2012 : GWA : Adding at the suggestion of Nikhil Londhe. We don't
@@ -62,11 +82,24 @@ void
 male(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
-  (void)which;
-  
-  male_start();
+	(void)which;
+	
+	lock_acquire(lock);
+	maleCount++;
+	while(!(femaleCount > 0 && matchCount > 0)){
+		kprintf("##################\n");
+		cv_wait(male_cv,lock);	
+		kprintf("********************\n");
+	}
+	
+	cv_signal(female_cv, lock);	
+	cv_signal(match_cv, lock);	
+	maleCount--;
+	lock_release(lock);
+
+	male_start();
 	// Implement this function 
-  male_end();
+	male_end();
 
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // whalemating driver can return to the menu cleanly.
@@ -78,11 +111,23 @@ void
 female(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
-  (void)which;
+  	(void)which;
+
+	lock_acquire(lock);
+	femaleCount++;
   
-  female_start();
+	while(!(maleCount > 0 && matchCount > 0)){
+		cv_wait(female_cv,lock);
+	}
+
+	cv_signal(male_cv,lock);
+	cv_signal(match_cv,lock);
+	femaleCount--;
+	lock_release(lock);
+
+  	female_start();
 	// Implement this function 
-  female_end();
+  	female_end();
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // whalemating driver can return to the menu cleanly.
@@ -94,11 +139,23 @@ void
 matchmaker(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
-  (void)which;
+  	(void)which;
+
+	lock_acquire(lock);
+	matchCount++;
+
+	while(!(maleCount > 0 && femaleCount > 0)){
+		cv_wait(match_cv,lock);
+	}
+
+	cv_signal(male_cv,lock);
+	cv_signal(female_cv,lock);
+	matchCount--;
+	lock_release(lock);
   
-  matchmaker_start();
+  	matchmaker_start();
 	// Implement this function 
-  matchmaker_end();
+  	matchmaker_end();
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // whalemating driver can return to the menu cleanly.
