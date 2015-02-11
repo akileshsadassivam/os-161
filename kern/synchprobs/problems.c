@@ -40,8 +40,8 @@ int maleCount;
 int femaleCount;
 int matchCount;
 struct lock *lock;
-//struct lock *female_lock;
-//struct lock *match_lock;
+struct lock *female_lock;
+struct lock *match_lock;
 struct cv *male_cv;
 struct cv *female_cv;
 struct cv *match_cv;
@@ -63,8 +63,8 @@ void whalemating_init() {
 	matchCount = 0;
 
 	lock = lock_create("male lock");
-	//female_lock = lock_create("female lock");
-	//match_lock = lock_create("match lock");
+	female_lock = lock_create("female lock");
+	match_lock = lock_create("match lock");
 	male_cv = cv_create("male cv");
 	female_cv = cv_create("female cv");
 	match_cv = cv_create("match cv");
@@ -83,22 +83,31 @@ male(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
 	(void)which;
+	bool wakeall = true;
 	
 	lock_acquire(lock);
 	maleCount++;
 	while(!(femaleCount > 0 && matchCount > 0)){
-		kprintf("##################\n");
 		cv_wait(male_cv,lock);	
-		kprintf("********************\n");
+		wakeall = false;
 	}
 	
-	cv_signal(female_cv, lock);	
-	cv_signal(match_cv, lock);	
-	maleCount--;
+	if(wakeall){
+		cv_signal(female_cv, lock);	
+		cv_signal(match_cv, lock);
+	}
+	
 	lock_release(lock);
 
 	male_start();
 	// Implement this function 
+	if(wakeall){
+	lock_acquire(lock);
+	maleCount--;
+	femaleCount--;
+	matchCount--;
+	lock_release(lock);
+	}
 	male_end();
 
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
@@ -112,21 +121,32 @@ female(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
   	(void)which;
+	bool wakeall = true;
 
 	lock_acquire(lock);
 	femaleCount++;
   
 	while(!(maleCount > 0 && matchCount > 0)){
 		cv_wait(female_cv,lock);
+		wakeall = false;
 	}
 
-	cv_signal(male_cv,lock);
-	cv_signal(match_cv,lock);
-	femaleCount--;
+	if(wakeall){
+		cv_signal(male_cv,lock);
+		cv_signal(match_cv,lock);
+	}
+
 	lock_release(lock);
 
   	female_start();
 	// Implement this function 
+	if(wakeall){
+	lock_acquire(lock);
+	maleCount--;
+	femaleCount--;
+	matchCount--;
+	lock_release(lock);
+	}
   	female_end();
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
@@ -140,21 +160,32 @@ matchmaker(void *p, unsigned long which)
 {
 	struct semaphore * whalematingMenuSemaphore = (struct semaphore *)p;
   	(void)which;
+	bool wakeall = true;
 
 	lock_acquire(lock);
 	matchCount++;
 
 	while(!(maleCount > 0 && femaleCount > 0)){
 		cv_wait(match_cv,lock);
+		wakeall = false;
 	}
 
-	cv_signal(male_cv,lock);
-	cv_signal(female_cv,lock);
-	matchCount--;
+	if(wakeall){
+		cv_signal(male_cv,lock);
+		cv_signal(female_cv,lock);
+	}
+
 	lock_release(lock);
   
   	matchmaker_start();
 	// Implement this function 
+	if(wakeall){
+	lock_acquire(lock);
+	maleCount--;
+	femaleCount--;
+	matchCount--;
+	lock_release(lock);
+	}
   	matchmaker_end();
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
