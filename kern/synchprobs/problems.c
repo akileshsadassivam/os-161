@@ -98,16 +98,16 @@ male(void *p, unsigned long which)
 	}
 	
 	lock_release(lock);
-
 	male_start();
+
 	// Implement this function 
-	if(wakeall){
+	//if(wakeall){
 	lock_acquire(lock);
 	maleCount--;
-	femaleCount--;
-	matchCount--;
+	//femaleCount--;
+	//matchCount--;
 	lock_release(lock);
-	}
+	//}
 	male_end();
 
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
@@ -137,16 +137,16 @@ female(void *p, unsigned long which)
 	}
 
 	lock_release(lock);
-
   	female_start();
+
 	// Implement this function 
-	if(wakeall){
+	//if(wakeall){
 	lock_acquire(lock);
-	maleCount--;
+	//maleCount--;
 	femaleCount--;
-	matchCount--;
+	//matchCount--;
 	lock_release(lock);
-	}
+	//}
   	female_end();
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
@@ -176,16 +176,16 @@ matchmaker(void *p, unsigned long which)
 	}
 
 	lock_release(lock);
-  
   	matchmaker_start();
+  
 	// Implement this function 
-	if(wakeall){
+	//if(wakeall){
 	lock_acquire(lock);
-	maleCount--;
-	femaleCount--;
+	//maleCount--;
+	//femaleCount--;
 	matchCount--;
 	lock_release(lock);
-	}
+	//}
   	matchmaker_end();
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
