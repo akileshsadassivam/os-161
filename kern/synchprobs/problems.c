@@ -35,6 +35,7 @@
 #include <thread.h>
 #include <test.h>
 #include <synch.h>
+#include <current.h>
 
 int maleCount;
 int femaleCount;
@@ -225,14 +226,28 @@ matchmaker(void *p, unsigned long which)
 // functions will allow you to do local initialization. They are called at
 // the top of the corresponding driver code.
 
+struct lock *lk0;
+struct lock *lk1;
+struct lock *lk2;
+struct lock *lk3;
+
 void stoplight_init() {
+        lk0=lock_create("lock0");
+        lk1=lock_create("lock1");
+        lk2=lock_create("lock2");
+        lk3=lock_create("lock3");
   return;
 }
+
 
 // 20 Feb 2012 : GWA : Adding at the suggestion of Nikhil Londhe. We don't
 // care if your problems leak memory, but if you do, use this to clean up.
 
 void stoplight_cleanup() {
+	lock_destroy(lk0);
+	lock_destroy(lk1);
+	lock_destroy(lk2);
+	lock_destroy(lk3);
   return;
 }
 
@@ -240,10 +255,75 @@ void
 gostraight(void *p, unsigned long direction)
 {
 	struct semaphore * stoplightMenuSemaphore = (struct semaphore *)p;
-  (void)direction;
+//  (void)direction;
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // stoplight driver can return to the menu cleanly.
+
+	//unsigned long dest = (direction+2)%4;
+	
+	kprintf("\t%s starting to go straight %lu\n",curthread->t_name,direction);	
+		switch(direction)
+		{
+			case 0:
+				lock_acquire(lk0);
+
+				lock_acquire(lk3);
+
+				inQuadrant(0);
+				inQuadrant(3);	
+				lock_release(lk3);
+				lock_release(lk0);
+				leaveIntersection();
+					
+			break;
+			case 1:
+
+                                lock_acquire(lk1);
+
+                                lock_acquire(lk0);
+
+                                inQuadrant(1);
+                                inQuadrant(0);
+                                lock_release(lk0);
+                                lock_release(lk1);
+                                leaveIntersection();
+				//	lock_release(lk);
+				//	lock_release(lk);
+
+			break;
+			case 2:
+                
+                                lock_acquire(lk2);
+
+                                lock_acquire(lk1);
+
+
+                                inQuadrant(2);
+                                inQuadrant(1);
+                                                lock_release(lk1);
+                                                lock_release(lk2);
+                                                leaveIntersection();
+
+			break;
+			case 3:
+                
+                                                lock_acquire(lk3);
+
+                                                lock_acquire(lk2);
+
+
+                                                inQuadrant(3);
+                                                inQuadrant(2);
+                                                lock_release(lk2);
+                                                lock_release(lk3);
+                                                leaveIntersection();
+
+			break;
+		}
+
+	kprintf("\t%s finished going straight\n",curthread->t_name);	
+
   V(stoplightMenuSemaphore);
   return;
 }
@@ -252,10 +332,89 @@ void
 turnleft(void *p, unsigned long direction)
 {
 	struct semaphore * stoplightMenuSemaphore = (struct semaphore *)p;
-  (void)direction;
+  //(void)direction;
   
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // stoplight driver can return to the menu cleanly.
+	
+	kprintf("\t%s starting to turn left\n",curthread->t_name);	
+	switch(direction)
+	{
+		case 0:
+
+					lock_acquire(lk0);
+					lock_acquire(lk3);
+					
+					lock_acquire(lk2);
+
+					inQuadrant(0);
+					inQuadrant(3);
+					inQuadrant(2);
+
+					lock_release(lk2);
+					lock_release(lk3);
+					lock_release(lk0);
+					leaveIntersection();
+
+		break;
+		case 1:
+
+                                        lock_acquire(lk1);
+                                        lock_acquire(lk0);
+
+                                        lock_acquire(lk3);
+
+                                        inQuadrant(1);
+                                        inQuadrant(0);
+                                        inQuadrant(3);
+
+                                        lock_release(lk3);
+                                        lock_release(lk0);
+                                        lock_release(lk1);
+                                        leaveIntersection();
+
+
+		break;
+		case 2:
+
+                                        lock_acquire(lk2);
+                                        lock_acquire(lk1);
+
+                                        lock_acquire(lk0);
+
+                                        inQuadrant(2);
+                                        inQuadrant(1);
+                                        inQuadrant(0);
+
+                                        lock_release(lk0);
+                                        lock_release(lk1);
+                                        lock_release(lk2);
+                                        leaveIntersection();
+
+		break;
+		case 3:
+
+                                        lock_acquire(lk3);
+                                        lock_acquire(lk2);
+
+                                        lock_acquire(lk1);
+
+                                        inQuadrant(3);
+                                        inQuadrant(2);
+                                        inQuadrant(1);
+
+                                        lock_release(lk1);
+                                        lock_release(lk2);
+                                        lock_release(lk3);
+                                        leaveIntersection();
+
+
+		break;
+	}
+	
+
+	kprintf("\t%s finished turning left\n",curthread->t_name);	
+
   V(stoplightMenuSemaphore);
   return;
 }
@@ -264,10 +423,44 @@ void
 turnright(void *p, unsigned long direction)
 {
 	struct semaphore * stoplightMenuSemaphore = (struct semaphore *)p;
-  (void)direction;
+//  (void)direction;
 
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
-  // stoplight driver can return to the menu cleanly.
+  // stoplight driver can return to the menu cleanly
+
+	kprintf("\t%s starting to turn right\n",curthread->t_name);	
+	switch(direction)
+	{
+		case 0:
+					lock_acquire(lk0);
+					inQuadrant(0);
+					lock_release(lk0);
+					leaveIntersection();
+		break;
+		case 1:
+                                        lock_acquire(lk1);
+                                        inQuadrant(1);
+                                        lock_release(lk1);
+                                        leaveIntersection();
+
+		break;
+		case 2:
+                                        lock_acquire(lk2);
+                                        inQuadrant(2);
+                                        lock_release(lk2);
+                                        leaveIntersection();
+
+		break;
+		case 3:
+                     lock_acquire(lk3);
+                                        inQuadrant(3);
+                                        lock_release(lk3);
+                                        leaveIntersection();
+
+		break;
+	}
+
+	kprintf("\t%s finished turning right\n",curthread->t_name);	
   V(stoplightMenuSemaphore);
   return;
 }
