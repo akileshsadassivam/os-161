@@ -10,4 +10,8 @@ struct process {
 	struct thread* self;
 }
 
+struct dummy{
+	int kkk;
+}
+
 #endif /*_PROCESS_H*/
