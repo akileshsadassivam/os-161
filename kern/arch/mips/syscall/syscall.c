@@ -35,7 +35,7 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
-
+#include <process.h>
 
 /*
  * System call dispatcher.
@@ -110,6 +110,13 @@ syscall(struct trapframe *tf)
 		break;
 
 	    /* Add stuff here */
+	    case SYS_getpid:
+		err = sys_getpid(&retval);
+		break;
+
+	    case SYS_fork:
+		err = sys_fork(&retval,tf);
+		break;
  
 	    default:
 		kprintf("Unknown syscall %d\n", callno);

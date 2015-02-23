@@ -47,7 +47,9 @@
 #include <addrspace.h>
 #include <mainbus.h>
 #include <vnode.h>
+#include <limits.h>
 
+#include "process.h"
 #include "opt-synchprobs.h"
 #include "opt-defaultscheduler.h"
 
@@ -153,6 +155,22 @@ thread_create(const char *name)
 	thread->t_cwd = NULL;
 
 	/* If you add to struct thread, be sure to initialize here */
+	thread->t_pid = generate_pid();
+	if(thread->t_pid == ENPROC){
+		kfree(thread);
+		return NULL;
+	}
+
+	process[thread->t_pid]->exitlock = lock_create("exitlock");
+	process[thread->t_pid]->self = thread;
+	process[thread->t_pid]->exited = false;
+	process[thread->t_pid]->exitcode = -1;
+
+	if(thread->t_pid == 1){ /* No parent - init process */
+		process[thread->t_pid]->ppid = -1;
+	}else {
+		process[thread->t_pid]->ppid = curthread->t_pid;
+	}
 
 	return thread;
 }
