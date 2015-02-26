@@ -203,11 +203,10 @@ sys_fork(int32_t* retval, struct trapframe* tf){
 	}
 
 	if(result){
-		return ENOMEM;
-	}else{
-		*retval = childthread->t_pid;
+		return result;
 	}
-	
+
+	*retval = childthread->t_pid;
 	return result;
 }
 
@@ -247,18 +246,25 @@ sys_waitpid(int32_t* retval, userptr_t arg1, userptr_t arg2, userptr_t arg3){
 	if(process[pid] == NULL){
 		return ESRCH;
 	}
-	
+
+	if(curthread->t_pid == pid){
+		return EINVAL;
+	}
+
+	if(process[pid]->ppid != curthread->t_pid){
+		return ECHILD;
+	}
+
+	lock_acquire(process[pid]->exitlock);	
 	if(!process[pid]->exited){
-		if(process[pid]->ppid != curthread->t_pid){
-			return ECHILD;
-		}
 		cv_wait(process[pid]->exitcv, process[pid]->exitlock);
 	}
 	
 	*status = process[pid]->exitcode;
+	lock_release(process[pid]->exitlock);
 	*retval = curthread->t_pid;
 
-	kfree(process[pid]->self);
+	//kfree(process[pid]->self);
 	lock_destroy(process[pid]->exitlock);
 	cv_destroy(process[pid]->exitcv);
 	kfree(process[pid]);
@@ -270,16 +276,20 @@ int
 sys_exit(userptr_t exitcode){
 	pid_t pid = curthread->t_pid;
 
-	lock_acquire(process[pid]->exitlock);
 	process[pid]->exited = true;
-	lock_release(process[pid]->exitlock);
 
 	pid_t ppid = process[pid]->ppid;
+	lock_acquire(process[pid]->exitlock);
 	if(!process[ppid]->exited){
 		process[pid]->exitcode = _MKWAIT_EXIT((int)exitcode);
+	}else{
+		lock_destroy(process[pid]->exitlock);
+		cv_destroy(process[pid]->exitcv);
+		kfree(process[pid]);
 	}
 	thread_exit();
 
 	cv_signal(process[pid]->exitcv,process[pid]->exitlock);
+	lock_release(process[pid]->exitlock);
 	return 0;
 }

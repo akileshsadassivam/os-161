@@ -52,7 +52,7 @@
 #include "process.h"
 #include "opt-synchprobs.h"
 #include "opt-defaultscheduler.h"
-
+#include <file_syscall.h>
 
 /* Magic number used as a guard value on kernel thread stacks. */
 #define THREAD_STACK_MAGIC 0xbaadf00d
@@ -184,7 +184,19 @@ thread_create(const char *name)
 	}else {
 		process[thread->t_pid]->ppid = curthread->t_pid;
 	}
-
+	
+/*	for(int i=0;i<3;i++)
+	{
+		thread->filetable[i] = kmalloc(sizeof(struct filehandle));
+		if(thread->filetable[i] == NULL)
+		{
+			lock_destroy(process[thread->t_pid]->exitlock);
+			kfree(process[thread->t_pid]);
+			kfree(thread);
+			return NULL;
+		}
+	}
+*/
 	return thread;
 }
 
@@ -557,6 +569,15 @@ thread_fork(const char *name,
 	/* Lock the current cpu's run queue and make the new thread runnable */
 	thread_make_runnable(newthread, false);
 
+	for(int i=0;i<OPEN_MAX;i++)
+	{
+	//	newthread->filetable[i] = kmalloc(sizeof(struct filehandle));
+		newthread->filetable[i] = curthread->filetable[i];
+		if(newthread->filetable[i] != NULL){
+			newthread->filetable[i]->refcnt++;
+		}
+	}
+
 	/*
 	 * Return new thread structure if it's wanted. Note that using
 	 * the thread structure from the parent thread should be done
@@ -847,6 +868,12 @@ thread_exit(void)
 
 	/* Check the stack guard band. */
 	thread_checkstack(cur);
+
+	for(int itr = 0; itr < OPEN_MAX; itr++){
+		if(cur->filetable[itr] != NULL && cur->filetable[itr]->refcnt == 0){
+			kfree(cur->filetable[itr]);
+		}
+	}
 
 	/* Interrupts off on this processor */
         splhigh();

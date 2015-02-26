@@ -44,6 +44,8 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <synch.h>
+#include <file_syscall.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -58,7 +60,51 @@ runprogram(char *progname)
 	vaddr_t entrypoint, stackptr;
 	int result;
 
+	 /*setting up STDIN STDOUT STDERR*/
+	for(int count = 0; count < 3; count++){
+		int flag;
+		if(count == 0){
+			flag = O_RDONLY;
+		}else{
+			flag = O_WRONLY;
+		}
+
+		curthread->filetable[count] = kmalloc(sizeof(struct filehandle));
+		if(curthread->filetable[count] == NULL){
+			return ENOMEM;
+		}
+
+		curthread->filetable[count]->flags = flag;                                        /*set flags */
+        	curthread->filetable[count]->offset = 0;
+        	curthread->filetable[count]->refcnt = 1;
+        	curthread->filetable[count]->lock = lock_create("std_lock");
+
+		if(curthread->filetable[count]->lock == NULL){
+			kfree(curthread->filetable[count]);
+			return ENOMEM;
+		}
+
+		char* path = kstrdup("con:");
+
+		result = vfs_open(path, flag, 06664, &curthread->filetable[count]->vn);
+
+        //result = sys_open((userptr_t)"con:", O_RDONLY, &retval);
+        	if(result){
+                	return result;
+        	}
+	}
+
+/*        result = sys_open((userptr_t)"con:", O_WRONLY, &retval);
+        if(result){
+                return result;
+        }
+        result = sys_open((userptr_t)"con:", O_WRONLY, &retval);
+        if(result){
+                return result;
+        }
+*/
 	/* Open the file. */
+	kprintf("In run program:%s\n", progname);
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
@@ -76,6 +122,8 @@ runprogram(char *progname)
 
 	/* Activate it. */
 	as_activate(curthread->t_addrspace);
+
+	
 
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);

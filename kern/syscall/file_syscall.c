@@ -20,7 +20,7 @@ sys_open(userptr_t flname, int rwflag, int *retval)
 		return  EFAULT;
 	}
 
-	for(int itr=3;itr<OPEN_MAX;itr++)
+	for(int itr=0;itr<OPEN_MAX;itr++)
 	{
 		if(curthread->filetable[itr]==NULL)
 		{
@@ -32,8 +32,8 @@ sys_open(userptr_t flname, int rwflag, int *retval)
 
 			curthread->filetable[itr]->flags=rwflag;					/*set flags */
 			curthread->filetable[itr]->offset=0;
-			curthread->filetable[itr]->refcnt+=1;
-			curthread->filetable[itr]->lock=lock_create("summa");				/*dummy name for a lock*/
+			curthread->filetable[itr]->refcnt=1;
+			curthread->filetable[itr]->lock=lock_create("open_lock");				/*dummy name for a lock*/
 				
 			if(curthread->filetable[itr]->lock==NULL)						/*return if lock is not available*/
 			{
@@ -42,29 +42,36 @@ sys_open(userptr_t flname, int rwflag, int *retval)
 			}
 
 			char* tempflname;
-			tempflname = kmalloc(sizeof(PATH_MAX+NAME_MAX));
+			int result;
 
-			if(tempflname==NULL)
-			{
-				
-				return ENOMEM;
-			}
+			if(itr >= 0 && itr <3){
+				tempflname = (char*) flname;
+			} else {
+				tempflname = kmalloc((strlen((char *)flname)+1)*sizeof(char));
 
-			int copyresult;
-			size_t fsize;
+				if(tempflname==NULL)
+				{
+					return ENOMEM;
+				}
 
-			copyresult = copyinstr((const_userptr_t) flname, tempflname,PATH_MAX+NAME_MAX,&fsize);
-			if(copyresult)
-			{
-				lock_destroy(curthread->filetable[itr]->lock);
-				kfree(curthread->filetable[itr]);
-				return ENOMEM;
+				size_t fsize;
+
+				result = copyinstr((const_userptr_t) flname, tempflname,(strlen((char *)flname)+1) * sizeof(char),&fsize);
+				if(result)
+				{
+					lock_destroy(curthread->filetable[itr]->lock);
+					kfree(curthread->filetable[itr]);
+					return result;
+				}
 			}
 			
-			int retopen;
-			retopen=vfs_open(tempflname, rwflag,0664,&(curthread->filetable[itr]->vn));	/*have no clue what 0664 is, check working later*/
+			result = vfs_open(tempflname, rwflag,0664,&(curthread->filetable[itr]->vn));	/*have no clue what 0664 is, check working later*/
+			if(result)
+			{
+				return result;
+			}
 			*retval=itr;
-			return retopen;									/*if all steps succeed, return file descriptor*/
+			return result;									/*if all steps succeed, return file descriptor*/
 		}
 	}
 	return ENOMEM;	
@@ -112,51 +119,63 @@ sys_close(int fd)
 int
 sys_write(int fd, userptr_t buf, size_t count, int* retval)
 {
-	if(buf == NULL)
+	if(buf == NULL || strlen((char *)buf) == 0)
 	{
 		return EFAULT;
 	}
-	if(fd < 3 || fd > OPEN_MAX)
+	if(fd < 0 || fd > OPEN_MAX)
 	{
 		return EBADF;
 	}
 	if(count <= 0)
         {
-                return -1;
+                return 1;
         }
 	if(curthread->filetable[fd] == NULL)
 	{
 		return EBADF;
 	}
-	lock_acquire(curthread->filetable[fd]->lock);
+	
 	struct iovec iovctr;
 	struct uio uiovar;
+
+	/*use copyinstr here*/
+	//size_t cpsize;
+	//iovctr.iov_ubase = kmalloc(sizeof(PATH_MAX+NAME_MAX));
+	//int copyret = copyinstr((const_userptr_t)buf, iovctr.iov_ubase,PATH_MAX+NAME_MAX,&cpsize);
+	//if(copyret)
+	//{
+	//	return ENOMEM;
+	//}
 	
-	iovctr.iov_ubase =  buf;
+
+	iovctr.iov_ubase = buf;
 	iovctr.iov_len = count;
 
 	uiovar.uio_segflg = UIO_USERSPACE;
 	uiovar.uio_iov = &iovctr;
 	uiovar.uio_iovcnt = 1;
+	lock_acquire(curthread->filetable[fd]->lock);
 	uiovar.uio_offset = curthread->filetable[fd]->offset;/*is it 0 or the offset from current thread file table*/
 	uiovar.uio_resid = count;
 	uiovar.uio_space = curthread->t_addrspace;
 	uiovar.uio_rw = UIO_WRITE;
+	lock_release(curthread->filetable[fd]->lock);
 	
 	int ret;
 	ret = VOP_WRITE(curthread->filetable[fd]->vn,&uiovar);
 	
-	if(!ret)
+	if(ret)
 	{
-		lock_release(curthread->filetable[fd]->lock);
-		*retval = ret;
-		return -1;
+		return ret;
 	}
 
+	lock_acquire(curthread->filetable[fd]->lock);
 	int writediff = uiovar.uio_offset-curthread->filetable[fd]->offset;
 	curthread->filetable[fd]->offset=uiovar.uio_offset;
 	lock_release(curthread->filetable[fd]->lock);
-	return writediff;
+	*retval = writediff;
+	return 0;
 	
 }
 
@@ -168,19 +187,18 @@ sys_read(int fd, userptr_t buf, size_t count, int* retval)
         {
                 return EFAULT;
         }
-        if(fd < 3 || fd > OPEN_MAX)
+        if(fd < 0 || fd > OPEN_MAX)
         {
                 return EBADF;
         }
         if(count <= 0)
         {
-                return -1;
+                return 1;
         }
         if(curthread->filetable[fd] == NULL)
         {
                 return EBADF;
         }
-        lock_acquire(curthread->filetable[fd]->lock);
         struct iovec iovctr;
         struct uio uiovar;
 
@@ -190,26 +208,27 @@ sys_read(int fd, userptr_t buf, size_t count, int* retval)
         uiovar.uio_segflg = UIO_USERSPACE;
         uiovar.uio_iov = &iovctr;
         uiovar.uio_iovcnt = 1;
+        lock_acquire(curthread->filetable[fd]->lock);
         uiovar.uio_offset = curthread->filetable[fd]->offset;/*is it 0 or the offset from current thread file table*/
         uiovar.uio_resid = count;
         uiovar.uio_space = curthread->t_addrspace;
         uiovar.uio_rw = UIO_READ;
+        lock_release(curthread->filetable[fd]->lock);
 
         int ret;
         ret = VOP_READ(curthread->filetable[fd]->vn,&uiovar);
 
-        if(!ret)
+        if(ret)
         {
-		 lock_release(curthread->filetable[fd]->lock);
-                *retval = ret;
-                return -1;
+                 return ret;
         }
 
+	lock_acquire(curthread->filetable[fd]->lock);
         int readdiff = uiovar.uio_offset-curthread->filetable[fd]->offset;
 	curthread->filetable[fd]->offset=uiovar.uio_offset;
         lock_release(curthread->filetable[fd]->lock);
-        return readdiff;
-
+        *retval = readdiff;
+	return 0;
 }
 
 
