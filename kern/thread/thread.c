@@ -162,6 +162,19 @@ thread_create(const char *name)
 	}
 
 	process[thread->t_pid]->exitlock = lock_create("exitlock");
+	if(process[thread->t_pid]->exitlock == NULL){
+		kfree(thread);
+		return NULL;
+	}
+
+	process[thread->t_pid]->exitcv = cv_create("exitcv");
+	if(process[thread->t_pid]->exitcv == NULL){
+		lock_destroy(process[thread->t_pid]->exitlock);
+		kfree(process[thread->t_pid]);
+		kfree(thread);
+		return NULL;
+	}
+
 	process[thread->t_pid]->self = thread;
 	process[thread->t_pid]->exited = false;
 	process[thread->t_pid]->exitcode = -1;
