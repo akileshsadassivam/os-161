@@ -226,16 +226,26 @@ matchmaker(void *p, unsigned long which)
 // functions will allow you to do local initialization. They are called at
 // the top of the corresponding driver code.
 
+struct lock *lk;
 struct lock *lk0;
 struct lock *lk1;
 struct lock *lk2;
 struct lock *lk3;
+bool lk0avl;
+bool lk1avl;
+bool lk2avl;
+bool lk3avl;
 
 void stoplight_init() {
+	lk = lock_create("lk");
         lk0=lock_create("lock0");
         lk1=lock_create("lock1");
         lk2=lock_create("lock2");
         lk3=lock_create("lock3");
+	lk0avl=true;
+	lk1avl=true;
+	lk2avl=true;
+	lk3avl=true;
   return;
 }
 
@@ -244,10 +254,6 @@ void stoplight_init() {
 // care if your problems leak memory, but if you do, use this to clean up.
 
 void stoplight_cleanup() {
-	lock_destroy(lk0);
-	lock_destroy(lk1);
-	lock_destroy(lk2);
-	lock_destroy(lk3);
   return;
 }
 
@@ -262,67 +268,142 @@ gostraight(void *p, unsigned long direction)
 
 	//unsigned long dest = (direction+2)%4;
 	
-	kprintf("\t%s starting to go straight %lu\n",curthread->t_name,direction);	
+//	kprintf("\t%s starting to go straight\n",curthread->t_name);	
 		switch(direction)
 		{
 			case 0:
-				lock_acquire(lk0);
+				while(1)
+				{	
+					lock_acquire(lk);
+					if(lk0avl && lk3avl)
+					{
+//						kprintf("%s ; %d %d\n",curthread->t_name,lk0avl,lk3avl);
+						lk0avl=false;
+						lk3avl=false;
 
-				lock_acquire(lk3);
+						lock_acquire(lk0);
+			//			kprintf("%s : lock0 of 0 & 3 acq\n",curthread->t_name);
+						inQuadrant(0);
 
-				inQuadrant(0);
-				inQuadrant(3);	
-				lock_release(lk3);
-				lock_release(lk0);
-				leaveIntersection();
+						lock_acquire(lk3);
+			//			kprintf("%s : lock3 of 3 & 3 acq\n",curthread->t_name);
+
+				//		leaveIntersection();
+
+						inQuadrant(3);	
+				//		kprintf("Car was going straight\n");
+						lock_release(lk0);
+						lock_release(lk3);
+						leaveIntersection();
+						lk0avl=true;
+						lk3avl=true;
+					lock_release(lk);
+						break;
+					}
+					lock_release(lk);
 					
+				}
 			break;
 			case 1:
+				while(1)
+                              {
+					lock_acquire(lk);
+                                        if(lk0avl && lk1avl)
+                                       {
+				//		kprintf("%s ; %d %d\n",curthread->t_name,lk1avl,lk0avl);
+                                                lk0avl=false;
+                                                lk1avl=false;
 
-                                lock_acquire(lk1);
+                                                lock_acquire(lk1);
+				//		kprintf("%s : lock1 of 1 & 0 acq\n",curthread->t_name);
+                                                inQuadrant(1);
 
-                                lock_acquire(lk0);
+                                                lock_acquire(lk0);
+				//		kprintf("%s : lock0 of 1 & 0 acq\n",curthread->t_name);
 
-                                inQuadrant(1);
-                                inQuadrant(0);
-                                lock_release(lk0);
-                                lock_release(lk1);
-                                leaveIntersection();
-				//	lock_release(lk);
-				//	lock_release(lk);
+                                                inQuadrant(0);
+				//		kprintf("Car was going straight\n");
+                                                lock_release(lk1);
+                                                lock_release(lk0);
+                                                leaveIntersection();
+                                                lk0avl=true;
+                                                lk1avl=true;
+					lock_release(lk);
+                                                break;
+                                        }
+					lock_release(lk);
+                                }
 
 			break;
 			case 2:
+				 while(1)
+                                {
+					lock_acquire(lk);
+                                        if(lk2avl && lk1avl)
+                                        {
+				//		kprintf("%s ; %d %d\n",curthread->t_name,lk2avl,lk1avl);
+                                                lk2avl=false;
+                                                lk1avl=false;
                 
-                                lock_acquire(lk2);
+                                                lock_acquire(lk2);
+				//		kprintf("%s : lock2 of 2 & 1 acq\n",curthread->t_name);
+                                                inQuadrant(2);
 
-                                lock_acquire(lk1);
+                                                lock_acquire(lk1);
+				//		kprintf("%s : lock1 of 2 & 1 acq\n",curthread->t_name);
 
-
-                                inQuadrant(2);
-                                inQuadrant(1);
-                                                lock_release(lk1);
+                                                inQuadrant(1);
+				//		kprintf("Car was going straight\n");
                                                 lock_release(lk2);
+                                                lock_release(lk1);
                                                 leaveIntersection();
+                                                lk2avl=true;
+                                                lk1avl=true;
+					lock_release(lk);
+                                                break;
+                                        }
+					lock_release(lk);
+                                }
 
 			break;
 			case 3:
+				 while(1)
+                                {
+					lock_acquire(lk);
+                                        if(lk3avl && lk2avl)
+                                        {
+				///		kprintf("%s : %d %d\n",curthread->t_name,lk3avl,lk2avl);
+                                                lk3avl=false;
+                                                lk2avl=false;
                 
                                                 lock_acquire(lk3);
+				///		kprintf("%s : lock3 of 3 & 2 acq\n",curthread->t_name);
+                                                inQuadrant(3);
 
                                                 lock_acquire(lk2);
+				///		kprintf("%s : lock2 of 3 & 2 acq\n",curthread->t_name);
 
-
-                                                inQuadrant(3);
                                                 inQuadrant(2);
-                                                lock_release(lk2);
+				//		kprintf("Car was going straight\n");
                                                 lock_release(lk3);
+                                                lock_release(lk2);
                                                 leaveIntersection();
 
+                                                lk3avl=true;
+                                                lk2avl=true;
+					lock_release(lk);
+                                                break;
+                                        }
+					lock_release(lk);
+                                }
+
 			break;
+                default:
+                        kprintf("################################################################################\n");
+
 		}
 
-	kprintf("\t%s finished going straight\n",curthread->t_name);	
+	//kprintf("\t%s finished going straight\n",curthread->t_name);	
 
   V(stoplightMenuSemaphore);
   return;
@@ -337,83 +418,162 @@ turnleft(void *p, unsigned long direction)
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // stoplight driver can return to the menu cleanly.
 	
-	kprintf("\t%s starting to turn left\n",curthread->t_name);	
+//	kprintf("\t%s starting to turn left\n",curthread->t_name);	
 	switch(direction)
 	{
 		case 0:
+			while(1)
+			{
+					lock_acquire(lk);
+				if(lk0avl && lk3avl && lk2avl)
+				{
+			//			kprintf("%s ; %d %d %d\n",curthread->t_name,lk0avl,lk3avl,lk2avl);
+					lk0avl=false;
+					lk3avl=false;
+					lk2avl=false;
+					lock_release(lk);
 
 					lock_acquire(lk0);
+			//		kprintf("%s : lock0 of 0 & 3 acq\n",curthread->t_name);
+					inQuadrant(0);
 					lock_acquire(lk3);
+			//		kprintf("%s : lock3 of 0 & 3 acq\n",curthread->t_name);
 					
+					inQuadrant(3);
 					lock_acquire(lk2);
 
-					inQuadrant(0);
-					inQuadrant(3);
 					inQuadrant(2);
 
-					lock_release(lk2);
-					lock_release(lk3);
+			//		kprintf("Car was going left\n");
 					lock_release(lk0);
+					lock_release(lk3);
+					lock_release(lk2);
 					leaveIntersection();
 
+					lk0avl=true;
+					lk3avl=true;
+					lk2avl=true;
+					break;
+				}
+					lock_release(lk);
+			}
 		break;
 		case 1:
+			 while(1)
+                        {
+					lock_acquire(lk);
+                                if(lk1avl && lk0avl && lk3avl)
+                                {
+			//		kprintf("%s ; %d %d %d\n",curthread->t_name,lk1avl,lk0avl,lk3avl);
+                                        lk1avl=false;
+                                        lk0avl=false;
+                                        lk3avl=false;
+					lock_release(lk);
 
                                         lock_acquire(lk1);
+                                        inQuadrant(1);
                                         lock_acquire(lk0);
 
+                                        inQuadrant(0);
                                         lock_acquire(lk3);
 
-                                        inQuadrant(1);
-                                        inQuadrant(0);
                                         inQuadrant(3);
 
-                                        lock_release(lk3);
-                                        lock_release(lk0);
+			///		kprintf("Car was going left\n");
                                         lock_release(lk1);
+                                        lock_release(lk0);
+                                        lock_release(lk3);
                                         leaveIntersection();
 
+                                        lk1avl=true;
+                                        lk0avl=true;
+                                        lk3avl=true;
+                                        break;
+                                }
+					lock_release(lk);
+
+                        }
 
 		break;
 		case 2:
+			 while(1)
+                        {
+					lock_acquire(lk);
+                                if(lk2avl && lk1avl && lk0avl)
+                                {
+			//		kprintf("%s ; %d %d %d\n",curthread->t_name,lk2avl,lk1avl,lk0avl);
+                                        lk2avl=false;
+                                        lk1avl=false;
+                                        lk0avl=false;
+					lock_release(lk);
 
                                         lock_acquire(lk2);
+                                        inQuadrant(2);
                                         lock_acquire(lk1);
 
+                                        inQuadrant(1);
                                         lock_acquire(lk0);
 
-                                        inQuadrant(2);
-                                        inQuadrant(1);
                                         inQuadrant(0);
 
-                                        lock_release(lk0);
-                                        lock_release(lk1);
+			//		kprintf("Car was going left\n");
                                         lock_release(lk2);
+                                        lock_release(lk1);
+                                        lock_release(lk0);
                                         leaveIntersection();
+
+                                        lk2avl=true;
+                                        lk1avl=true;
+                                        lk0avl=true;
+
+                                        break;
+                                }
+					lock_release(lk);
+                        }
 
 		break;
 		case 3:
+			 while(1)
+                        {
+					lock_acquire(lk);
+                                if(lk3avl && lk2avl && lk1avl)
+                                {
+			//		kprintf("%s ; %d %d %d\n",curthread->t_name,lk3avl,lk2avl,lk1avl);
+                                        lk3avl=false;
+                                        lk2avl=false;
+                                        lk1avl=false;
+					lock_release(lk);
 
                                         lock_acquire(lk3);
+                                        inQuadrant(3);
                                         lock_acquire(lk2);
 
+                                        inQuadrant(2);
                                         lock_acquire(lk1);
 
-                                        inQuadrant(3);
-                                        inQuadrant(2);
                                         inQuadrant(1);
 
-                                        lock_release(lk1);
-                                        lock_release(lk2);
+			//		kprintf("Car was going left\n");
                                         lock_release(lk3);
+                                        lock_release(lk2);
+                                        lock_release(lk1);
                                         leaveIntersection();
 
+                                        lk3avl=true;
+                                        lk2avl=true;
+                                        lk1avl=true;
+                                        break;
+                                }
+					lock_release(lk);
+                        }
 
 		break;
+		default:
+			kprintf("################################################################################\n");
 	}
 	
 
-	kprintf("\t%s finished turning left\n",curthread->t_name);	
+//	kprintf("\t%s finished turning left\n",curthread->t_name);	
 
   V(stoplightMenuSemaphore);
   return;
@@ -428,39 +588,98 @@ turnright(void *p, unsigned long direction)
   // 08 Feb 2012 : GWA : Please do not change this code. This is so that your
   // stoplight driver can return to the menu cleanly
 
-	kprintf("\t%s starting to turn right\n",curthread->t_name);	
+//	kprintf("\t%s starting to turn right\n",curthread->t_name);	
 	switch(direction)
 	{
 		case 0:
+			while(1)
+			{
+				lock_acquire(lk);
+				if(lk0avl)
+				{
+			//		kprintf("%s ; %d\n",curthread->t_name,lk0avl);
+					lk0avl=false;
 					lock_acquire(lk0);
 					inQuadrant(0);
+			//		kprintf("Car was going right\n");
 					lock_release(lk0);
 					leaveIntersection();
+					lk0avl=true;
+					lock_release(lk);
+					break;
+				}
+					lock_release(lk);
+			}
 		break;
 		case 1:
+			 while(1)
+                        {
+				lock_acquire(lk);
+                                if(lk1avl)
+                                {
+			//		 kprintf("%s ; %d\n",curthread->t_name,lk1avl);
+                                        lk1avl=false;
                                         lock_acquire(lk1);
                                         inQuadrant(1);
+			//		kprintf("Car was going right\n");
                                         lock_release(lk1);
                                         leaveIntersection();
+                                        lk1avl=true;
+					lock_release(lk);
+                                        break;
+                                }
+					lock_release(lk);
+                        }
 
 		break;
 		case 2:
+			 while(1)
+                        {
+				lock_acquire(lk);
+                                if(lk2avl)
+                                {
+			//		 kprintf("%s ; %d\n",curthread->t_name,lk2avl);
+                                        lk2avl=false;
                                         lock_acquire(lk2);
                                         inQuadrant(2);
+			//		kprintf("Car was going right\n");
                                         lock_release(lk2);
                                         leaveIntersection();
+                                        lk2avl=true;
+					lock_release(lk);
+                                        break;
+                                }
+					lock_release(lk);
+                        }
 
 		break;
 		case 3:
-                     lock_acquire(lk3);
+			 while(1)
+                        {
+				lock_acquire(lk);
+                                if(lk3avl)
+                                {
+			//		 kprintf("%s ; %d\n",curthread->t_name,lk3avl);
+                                        lk3avl=false;
+                                        lock_acquire(lk3);
                                         inQuadrant(3);
+			//		kprintf("Car was going right\n");
                                         lock_release(lk3);
                                         leaveIntersection();
+                                        lk3avl=true;
+					lock_release(lk);
+                                        break;
+                                }
+					lock_release(lk);
+                        }
 
 		break;
+                default:
+                        kprintf("################################################################################\n");
+
 	}
 
-	kprintf("\t%s finished turning right\n",curthread->t_name);	
+//	kprintf("\t%s finished turning right\n",curthread->t_name);	
   V(stoplightMenuSemaphore);
   return;
 }
