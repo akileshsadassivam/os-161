@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
 #include <synch.h>
 #include <file_syscall.h>
 
@@ -54,7 +55,7 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, unsigned long argc, char** args)
 {
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
@@ -88,23 +89,51 @@ runprogram(char *progname)
 
 		result = vfs_open(path, flag, 06664, &curthread->filetable[count]->vn);
 
-        //result = sys_open((userptr_t)"con:", O_RDONLY, &retval);
         	if(result){
                 	return result;
         	}
 	}
 
-/*        result = sys_open((userptr_t)"con:", O_WRONLY, &retval);
-        if(result){
-                return result;
-        }
-        result = sys_open((userptr_t)"con:", O_WRONLY, &retval);
-        if(result){
-                return result;
-        }
-*/
 	/* Open the file. */
-	kprintf("In run program:%s\n", progname);
+	int argtotalsize = 0;
+	size_t actual;
+
+	for(unsigned int count = 0; count < argc; count++){
+                if(args[count] == NULL){
+                        break;
+                }else{
+                        int usize = strlen(args[count]) + 1;
+			int ksize;
+
+                        if(usize == 0){
+                                return EINVAL;
+                        }
+
+                        if(usize % 4 == 0){
+                                ksize = usize;
+                        } else {
+                                ksize = usize + (4 - (usize % 4));
+                        }
+			
+			argtotalsize += ksize;
+                }
+        }
+
+	int32_t* kargv[argc+1];
+ 
+        kargv[0] = kmalloc(sizeof(int32_t));
+        *kargv[0] = (argc+1) * 4;               //'+1' -> since index starts with zero
+ 
+        for(unsigned int count = 1; count < argc; count++){
+                kargv[count] = kmalloc(sizeof(int32_t));
+                *kargv[count] = *kargv[count-1] + strlen(args[count-1]) + 1;
+        }
+ 
+        if(argc == 0){
+               kfree(kargv[argc]);
+        }
+        kargv[argc] = NULL;
+
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
@@ -143,9 +172,30 @@ runprogram(char *progname)
 		return result;
 	}
 
+	//Calculate the bottom of the stack based on the initial stack pointer and kernel buffer
+        vaddr_t bottomstack = stackptr - (vaddr_t)argtotalsize - (vaddr_t)((argc + 1) * (sizeof(int32_t)));
+        vaddr_t curstack = bottomstack;
+        vaddr_t kargstack = bottomstack;
+
+        for(unsigned int count = 0; count < argc; count++){
+                kargstack = bottomstack + (count * sizeof(int32_t));
+                curstack = bottomstack + (vaddr_t)*kargv[count];
+
+                result = copyout(&curstack, (userptr_t)kargstack, sizeof(int32_t));
+                if(result){
+                        return result;
+                }
+
+                result = copyoutstr(args[count], (userptr_t)curstack, strlen(args[count]) + 1, &actual);
+                if(result){
+                        return result;
+                }
+        }
+
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  stackptr, entrypoint);
+	enter_new_process(argc /*argc*/, (userptr_t) bottomstack /*userspace addr of argv*/,
+			  bottomstack, entrypoint);
 	
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");

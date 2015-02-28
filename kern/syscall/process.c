@@ -18,7 +18,7 @@ pid_t
 generate_pid(){
 
 	int itr = 1;	//pid should start only from 1 and not 0
-	pid_t pid = ENPROC;
+	pid_t pid = -1;
 
 	for(; itr < PID_MAX; itr++){
 		if(process[itr] == NULL){
@@ -59,25 +59,30 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 	struct vnode *vnode;
 	vaddr_t entrypoint, stackptr;
 
-	if(strlen((char*)arg1) == 0 || args == NULL || *args == NULL){
+	if((char*)arg1 == (char*) 0x40000000 || (char*)arg1 >= (char*) 0x80000000 || 
+		(char*)arg2 == (char*) 0x40000000 || (char*)arg2 >= (char*) 0x80000000){
+                 return EFAULT;
+        }
+
+	if(arg1 == NULL || args == NULL){
+		return EFAULT;
+	}
+
+	if(strlen((char*)arg1) == 0){
 		return EINVAL;
 	}
 
-	progname = kmalloc(strlen((char*)arg1));
-	if(progname == NULL){
-		return ENOMEM;
-	}
-
-	result = copyin(arg1, progname, strlen((char*)arg1));
-	if(result){
-		return EINVAL;
-	}
+	progname = (char*) arg1;
 
 	for(count = 0; count < ARG_MAX; count++){
+		if((char*)args[count] == (char*) 0x40000000 || (char*)args[count] >= (char*) 0x80000000){
+			return EFAULT;
+		}
+
 		if(args[count] == NULL){
 			break;
 		}else{
-			usize = strlen(args[count]);
+			usize = strlen(args[count]) + 1;
 			if(usize == 0){
 				return EINVAL;
 			}
@@ -104,7 +109,7 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 
 	for(count = 1; count < argc; count++){
 		kargv[count] = kmalloc(sizeof(int32_t));
-		*kargv[count] = *kargv[count-1] + strlen(kbuffer[count-1]);
+		*kargv[count] = *kargv[count-1] + strlen(kbuffer[count-1]) + 1;
 	}
 
 	if(argc == 0){
@@ -151,20 +156,16 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 	vaddr_t curstack = bottomstack;
 	vaddr_t kargstack = bottomstack;
 
-	kprintf("Bottom stack%x\n", bottomstack);
 	for(count = 0; count < argc; count++){
 		kargstack = bottomstack + (count * sizeof(int32_t));
 		curstack = bottomstack + (vaddr_t)*kargv[count];
-		kprintf("kargstack:%x\n", kargstack);
-		kprintf("curstack:%x\n", curstack);
-		//*kargv[count] = curstack;
 
 		result = copyout(&curstack, (userptr_t)kargstack, sizeof(int32_t));
 		if(result){
 			return result;
 		}
 
-		result = copyoutstr(kbuffer[count], (userptr_t)curstack, strlen(kbuffer[count]), &actual);
+		result = copyoutstr(kbuffer[count], (userptr_t)curstack, strlen(kbuffer[count]) + 1, &actual);
 		if(result){
 			return result;
 		}	
@@ -235,12 +236,20 @@ sys_waitpid(int32_t* retval, userptr_t arg1, userptr_t arg2, userptr_t arg3){
 	int* status = (int*)arg2;
 	int options = (int)arg3;
 
-	if(status == NULL || ((int)arg2 & 16) != 0){
+	if(status == NULL || ((int)arg2 & 3) != 0){
 		return EFAULT;
 	}
 
-	if(options != WNOHANG && options != WUNTRACED){
+	if(status == (int*) 0x40000000 || status == (int*) 0x80000000){
+		return EFAULT;
+	}
+
+	if(options != 0 && options != WNOHANG && options != WUNTRACED){
 		return EINVAL;
+	}
+
+	if(pid < 1 || pid >= PID_MAX){
+		return ESRCH;
 	}
 
 	if(process[pid] == NULL){
@@ -287,9 +296,10 @@ sys_exit(userptr_t exitcode){
 		cv_destroy(process[pid]->exitcv);
 		kfree(process[pid]);
 	}
-	thread_exit();
 
 	cv_signal(process[pid]->exitcv,process[pid]->exitlock);
 	lock_release(process[pid]->exitlock);
+	thread_exit();
+
 	return 0;
 }

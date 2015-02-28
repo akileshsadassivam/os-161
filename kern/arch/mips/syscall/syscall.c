@@ -120,7 +120,6 @@ syscall(struct trapframe *tf)
 		break;
 		
             case SYS_execv:
-                kprintf("In SYS_execv\n");
                 err = sys_execv((userptr_t)tf->tf_a0,
                                 (userptr_t)tf->tf_a1);
                 break;

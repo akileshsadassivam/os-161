@@ -40,6 +40,7 @@
 #include <sfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <process.h>
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
@@ -91,16 +92,16 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
-	if (nargs > 2) {
-		kprintf("Warning: argument passing from menu not supported\n");
-	}
+	//if (nargs > 2) {
+	//	kprintf("Warning: argument passing from menu not supported\n");
+	//}
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
 	strcpy(progname, args[0]);
 
-	result = runprogram(progname);
+	result = runprogram(progname, nargs, args);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
@@ -132,13 +133,29 @@ common_prog(int nargs, char **args)
 	kprintf("Warning: this probably won't work with a "
 		"synchronization-problems kernel.\n");
 #endif
-
+	struct thread* thread;
+	
 	result = thread_fork(args[0] /* thread name */,
 			cmd_progthread /* thread function */,
 			args /* thread arg */, nargs /* thread arg */,
-			NULL);
+			&thread);
+
+	if(thread == NULL){
+		kprintf("thread_fork failed to allocate memory\n");
+		return -1;
+	}
+
 	if (result) {
 		kprintf("thread_fork failed: %s\n", strerror(result));
+		return result;
+	}
+
+	int retval, str;
+
+	result = sys_waitpid(&retval, (userptr_t)thread->t_pid, (userptr_t)&str, (userptr_t)0);
+	
+	if(result) {
+		kprintf("waitpid failed: %s\n", strerror(result));
 		return result;
 	}
 

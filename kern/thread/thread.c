@@ -156,7 +156,7 @@ thread_create(const char *name)
 
 	/* If you add to struct thread, be sure to initialize here */
 	thread->t_pid = generate_pid();
-	if(thread->t_pid == ENPROC){
+	if(thread->t_pid == -1){
 		kfree(thread);
 		return NULL;
 	}
