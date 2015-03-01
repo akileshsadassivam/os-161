@@ -37,7 +37,7 @@
 #include <syscall.h>
 #include <process.h>
 #include <file_syscall.h>
-
+#include <copyinout.h>
 /*
  * System call dispatcher.
  *
@@ -150,6 +150,47 @@ syscall(struct trapframe *tf)
 		err = sys_write((int)tf->tf_a0,(userptr_t)tf->tf_a1,(size_t)tf->tf_a2,&retval);
 		break;
  
+	case SYS_dup2:
+		err = sys_dup2((int)tf->tf_a0,(int)tf->tf_a1,&retval);
+		break;
+
+	    case SYS_chdir:
+		err = sys_chdir((userptr_t)tf->tf_a0);
+		break;
+
+	    case SYS___getcwd:
+		err = sys__getcwd((userptr_t)tf->tf_a0,(size_t)tf->tf_a1);
+		break; 
+
+	    case SYS_lseek:
+	    {
+		off_t pos;
+		pos = 0;
+
+		if((int)tf->tf_a2){
+			pos = (int)tf->tf_a2;
+			pos = pos << 32;
+		}
+		pos += (int)tf->tf_a3;
+		int32_t whence;
+		int res = copyin((userptr_t)tf->tf_sp+16, &whence, sizeof(int32_t));
+		if(res){
+			err=1;
+			break;
+		}
+		err = sys_lseek((int)tf->tf_a0,&pos,whence);
+
+		int highbits = pos >> 32;
+		if(highbits){
+			retval = highbits;
+			tf->tf_v1 = (int)pos;
+		}
+		else{
+			tf->tf_v1 = (int)pos;
+		}
+		break;
+	    }
+
 	    default:
 		kprintf("Unknown syscall %d\n", callno);
 		err = ENOSYS;
