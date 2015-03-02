@@ -94,10 +94,12 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 			}
 			
 			argtotalsize += ksize;
+			kbuffer = kmalloc(sizeof(char));
 			kbuffer[count] = kmalloc(sizeof(char) * ksize);
 			if((result = copyinstr((const_userptr_t)args[count], kbuffer[count], ksize, &actual)) != 0){
 				return result;
 			}
+			kbuffer++;
 		}
 	}
 
@@ -171,6 +173,12 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 		}	
 	}
 
+	for(int count = 0; count<argc; count++){
+		kfree(kargv[count]);
+		kfree(kbuffer[count]);
+	}
+	kfree(kbuffer);
+
 	enter_new_process(argc, (userptr_t)bottomstack, bottomstack, entrypoint);
 
 	panic("enter_new_process returned");
@@ -193,6 +201,7 @@ sys_fork(int32_t* retval, struct trapframe* tf){
 
 	as_copy(curthread->t_addrspace, &childaddr);
 	if(childaddr == NULL){
+		kfree(childtrap);
 		return ENOMEM;
 	}
 
@@ -223,6 +232,7 @@ child_forkentry(void* data1, unsigned long data2){
 
 	memcpy(&stacktrapframe, childtrap, sizeof(struct trapframe));
 	kfree(childtrap);
+	childtrap = NULL;
 
 	curthread->t_addrspace = childaddr;
 	as_activate(curthread->t_addrspace);
@@ -240,7 +250,9 @@ sys_waitpid(int32_t* retval, userptr_t arg1, userptr_t arg2, userptr_t arg3){
 		return EFAULT;
 	}
 
-	if(status == (int*) 0x40000000 || status == (int*) 0x80000000){
+	if((int*)arg1 == (int*) 0x40000000 || (int*)arg1 == (int*) 0x80000000
+		|| (int*)arg2 == (int*) 0x40000000 || (int*)arg2 == (int*) 0x80000000
+		|| (int*)arg3 == (int*) 0x40000000 || (int*)arg3 == (int*) 0x80000000){
 		return EFAULT;
 	}
 
@@ -273,10 +285,10 @@ sys_waitpid(int32_t* retval, userptr_t arg1, userptr_t arg2, userptr_t arg3){
 	lock_release(process[pid]->exitlock);
 	*retval = curthread->t_pid;
 
-	//kfree(process[pid]->self);
 	lock_destroy(process[pid]->exitlock);
 	cv_destroy(process[pid]->exitcv);
 	kfree(process[pid]);
+	process[pid] = NULL;
 
 	return 0;
 }
@@ -291,14 +303,15 @@ sys_exit(userptr_t exitcode){
 	lock_acquire(process[pid]->exitlock);
 	if(!process[ppid]->exited){
 		process[pid]->exitcode = _MKWAIT_EXIT((int)exitcode);
+		cv_signal(process[pid]->exitcv,process[pid]->exitlock);
+		lock_release(process[pid]->exitlock);
 	}else{
 		lock_destroy(process[pid]->exitlock);
 		cv_destroy(process[pid]->exitcv);
 		kfree(process[pid]);
+		process[pid] = NULL;
 	}
 
-	cv_signal(process[pid]->exitcv,process[pid]->exitlock);
-	lock_release(process[pid]->exitlock);
 	thread_exit();
 
 	return 0;

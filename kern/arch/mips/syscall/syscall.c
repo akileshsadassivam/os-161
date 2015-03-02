@@ -143,14 +143,14 @@ syscall(struct trapframe *tf)
 		break;
 
 	    case SYS_read:
-		err = sys_read((int)tf->tf_a0,(userptr_t)tf->tf_a1,(size_t)tf->tf_a2,&retval);
+		err = sys_read((int)tf->tf_a0,(userptr_t)tf->tf_a1,(userptr_t)tf->tf_a2,&retval);
 		break;
 
 	    case SYS_write:
 		err = sys_write((int)tf->tf_a0,(userptr_t)tf->tf_a1,(size_t)tf->tf_a2,&retval);
 		break;
  
-	case SYS_dup2:
+	    case SYS_dup2:
 		err = sys_dup2((int)tf->tf_a0,(int)tf->tf_a1,&retval);
 		break;
 
@@ -171,7 +171,7 @@ syscall(struct trapframe *tf)
 			pos = (int)tf->tf_a2;
 			pos = pos << 32;
 		}
-		pos += (int)tf->tf_a3;
+		pos = pos | (int)tf->tf_a3;
 		int32_t whence;
 		int res = copyin((userptr_t)tf->tf_sp+16, &whence, sizeof(int32_t));
 		if(res){
@@ -180,16 +180,22 @@ syscall(struct trapframe *tf)
 		}
 		err = sys_lseek((int)tf->tf_a0,&pos,whence);
 
-		int highbits = pos >> 32;
-		if(highbits){
-			retval = highbits;
-			tf->tf_v1 = (int)pos;
-		}
-		else{
-			tf->tf_v1 = (int)pos;
+		if(!err){
+			int highbits = pos >> 32;
+			if(highbits){
+				retval = highbits;
+				tf->tf_v1 = (int)pos;
+			}
+			else{
+				tf->tf_v1 = (int)pos;
+			}
 		}
 		break;
 	    }
+
+	    case SYS_remove:
+		err = sys_remove((userptr_t)tf->tf_a0);
+		break;
 
 	    default:
 		kprintf("Unknown syscall %d\n", callno);

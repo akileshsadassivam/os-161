@@ -21,7 +21,7 @@ int
 sys_write(int, userptr_t , size_t, int *);
 
 int
-sys_read(int, userptr_t , size_t, int *);
+sys_read(int, userptr_t , userptr_t, int *);
 
 
 int
@@ -36,5 +36,8 @@ sys__getcwd(userptr_t, size_t);
 
 int
 sys_lseek(int, off_t *, int);
+
+int
+sys_remove(userptr_t);
 
 #endif

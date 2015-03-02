@@ -184,19 +184,7 @@ thread_create(const char *name)
 	}else {
 		process[thread->t_pid]->ppid = curthread->t_pid;
 	}
-	
-/*	for(int i=0;i<3;i++)
-	{
-		thread->filetable[i] = kmalloc(sizeof(struct filehandle));
-		if(thread->filetable[i] == NULL)
-		{
-			lock_destroy(process[thread->t_pid]->exitlock);
-			kfree(process[thread->t_pid]);
-			kfree(thread);
-			return NULL;
-		}
-	}
-*/
+
 	return thread;
 }
 
@@ -571,7 +559,6 @@ thread_fork(const char *name,
 
 	for(int i=0;i<OPEN_MAX;i++)
 	{
-	//	newthread->filetable[i] = kmalloc(sizeof(struct filehandle));
 		newthread->filetable[i] = curthread->filetable[i];
 		if(newthread->filetable[i] != NULL){
 			newthread->filetable[i]->refcnt++;
@@ -852,6 +839,13 @@ thread_exit(void)
 		cur->t_cwd = NULL;
 	}
 
+	for(int itr = 0; itr < OPEN_MAX; itr++){
+		if(cur->filetable[itr] != NULL && cur->filetable[itr]->refcnt == 0){
+			lock_destroy(cur->filetable[itr]->lock);
+			kfree(cur->filetable[itr]);
+		}
+	}
+
 	/* VM fields */
 	if (cur->t_addrspace) {
 		/*
@@ -868,12 +862,6 @@ thread_exit(void)
 
 	/* Check the stack guard band. */
 	thread_checkstack(cur);
-
-	for(int itr = 0; itr < OPEN_MAX; itr++){
-		if(cur->filetable[itr] != NULL && cur->filetable[itr]->refcnt == 0){
-			kfree(cur->filetable[itr]);
-		}
-	}
 
 	/* Interrupts off on this processor */
         splhigh();
