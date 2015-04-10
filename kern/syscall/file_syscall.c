@@ -17,14 +17,18 @@
 int
 sys_open(userptr_t flname, int rwflag, int *retval)
 {
-	if((char*)flname == (char*) 0x40000000 || (char*)flname >= (char*) 0x80000000){
+	char temp[PATH_MAX+NAME_MAX];
+	int result;
+	size_t actual;
+
+	result = copyinstr((const_userptr_t)flname, temp, PATH_MAX+NAME_MAX, &actual);
+	if(result){
 		return EFAULT;
 	}
-
-	if(flname == NULL)
-	{
-		return  EFAULT;
-	}	
+	
+	/*if((char*)flname == (char*) 0x40000000 || (char*)flname >= (char*) 0x80000000){
+		return EFAULT;
+	}*/
 
 	if(strlen((char *) flname) == 0 || (rwflag & O_ACCMODE) > 3){
 		return EINVAL;
@@ -136,9 +140,9 @@ sys_close(int fd)
 int
 sys_write(int fd, userptr_t buf, size_t count, int* retval)
 {
-	if((char*)buf == (char*) 0x40000000 || (char*)buf >= (char*) 0x80000000 || buf == NULL){
-		return EFAULT;
-	}
+	char temp[count + 1];
+	int result;
+	size_t actual;
 
 	if(fd < 0 || fd >= OPEN_MAX){
 		return EBADF;
@@ -147,6 +151,22 @@ sys_write(int fd, userptr_t buf, size_t count, int* retval)
 	if(count <= 0){
                 return EINVAL;
         }
+
+	if(count == 1){
+		result = copyin((const_userptr_t)buf, temp, count+1);
+		if(result){
+			return EFAULT;
+		}
+	}else {
+		result = copyinstr((const_userptr_t)buf, temp, count+1, &actual);
+        	if(result){
+                	return EFAULT;
+        	}
+	}
+
+	/*if((char*)buf == (char*) 0x40000000 || (char*)buf >= (char*) 0x80000000){
+		return EFAULT;
+	}*/
 
 	if(curthread->filetable[fd] == NULL){
 		return EBADF;
@@ -188,10 +208,9 @@ int
 sys_read(int fd, userptr_t buf, userptr_t tempcount, int* retval)
 {
 	size_t count = (size_t)tempcount;	
-        if((char*)buf == (char*) 0x40000000 || (char*)buf >= (char*) 0x80000000 || buf == NULL
-		|| (void*)count == (void*) 0x40000000 || (void*)count >= (void*) 0x80000000){
-                return EFAULT;
-        }
+	char temp[count+1];
+	int result;
+	size_t actual;
 
         if(fd < 0 || fd >= OPEN_MAX){
                 return EBADF;
@@ -201,27 +220,29 @@ sys_read(int fd, userptr_t buf, userptr_t tempcount, int* retval)
                 return EINVAL;
         }
 
+	if(count == 1){
+                result = copyin((const_userptr_t)buf, temp, count+1);
+                if(result){
+                        return EFAULT;
+                }
+        }else {
+		result = copyinstr((const_userptr_t)buf, temp, count+1, &actual);
+        	if(result){
+                	return EFAULT;
+        	}
+	}
+
+        /*if((char*)buf == (char*) 0x40000000 || (char*)buf >= (char*) 0x80000000 
+		|| (void*)count == (void*) 0x40000000 || (void*)count >= (void*) 0x80000000){
+                return EFAULT;
+        }*/
+
         if(curthread->filetable[fd] == NULL){
                 return EBADF;
         }
 
-	struct stat st;
         struct iovec iovctr;
         struct uio uiovar;
-
-	if(!(fd >= 0 && fd < 3)){
-		VOP_STAT(curthread->filetable[fd]->vn,&st);
-		if((curthread->filetable[fd]->offset) >= st.st_size){
-			*retval = 0;
-			return 0;
-		//count = st.st_size - curthread->filetable[fd]->offset;
-		}
-
-		if((curthread->filetable[fd]->offset + count) >= st.st_size){
-			kprintf("EOF!!!\n");
-			count = st.st_size - curthread->filetable[fd]->offset;
-		}
-	}
 
         iovctr.iov_ubase = buf;
         iovctr.iov_len = count;
@@ -348,13 +369,13 @@ sys_chdir(userptr_t path) {
 	char temppath[PATH_MAX];
         size_t fsize;
 	
-	if((char*)path == (char*) 0x40000000 || (char*)path >= (char*) 0x80000000 || (char*)path == NULL){
+	/*if((char*)path == (char*) 0x40000000 || (char*)path >= (char*) 0x80000000){
                 return EFAULT;
-        }
+        }*/
 
 	int result = copyinstr((const_userptr_t) path, temppath, PATH_MAX, &fsize);
         if(result){
-                return result;
+                return EFAULT;
         }
 	
 	result = vfs_chdir(temppath);
@@ -371,9 +392,9 @@ sys__getcwd(userptr_t buf, size_t buflen){
 	char tempbuf[PATH_MAX];
         size_t fsize;
 
-	if((char*)buf == (char*) 0x40000000 || (char*)buf >= (char*) 0x80000000 || (char*)buf == NULL){
+	/*if((char*)buf == (char*) 0x40000000 || (char*)buf >= (char*) 0x80000000){
                 return EFAULT;
-        }
+        }*/
 
 	if(buflen <= 0){
 		return EFAULT;
@@ -381,7 +402,7 @@ sys__getcwd(userptr_t buf, size_t buflen){
 	
         int ret = copyinstr((const_userptr_t) buf, tempbuf, PATH_MAX,&fsize);
         if(ret){
-                return ret;
+                return EFAULT;
         }
 
 	struct uio bufuio;
@@ -413,17 +434,13 @@ sys_remove(userptr_t path){
 	char pathname[PATH_MAX]; //= (char*) path;
 	size_t actual;
 
-	if((char*)path == (char*) 0x40000000 || (char*)path >= (char*) 0x80000000){
+	/*if((char*)path == (char*) 0x40000000 || (char*)path >= (char*) 0x80000000){
 		return EFAULT;
-	}
-
-	if((char*)path == NULL){
-		return EFAULT;
-	}
+	}*/
 
 	int result = copyinstr((const_userptr_t)path, pathname, PATH_MAX, &actual);
 	if(result){
-		return result;
+		return EFAULT;
 	}
 
 	result = vfs_remove(pathname);

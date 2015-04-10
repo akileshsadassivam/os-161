@@ -64,6 +64,12 @@ sys_execv(userptr_t arg1, userptr_t arg2){
                  return EFAULT;
         }
 
+	char temp[128];
+	result = copyinstr((const_userptr_t)arg1, temp, 128, &actual);
+	if(result){
+		return EFAULT;
+	}	
+
 	if(arg1 == NULL || args == NULL){
 		return EFAULT;
 	}
