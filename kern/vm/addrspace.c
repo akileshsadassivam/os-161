@@ -53,6 +53,9 @@ as_create(void)
 	 * Initialize as needed.
 	 */
 
+	as->as_segment = NULL;
+	as->as_pgtable = NULL;
+	as->as_hpstart = as->as_hpend = 0;
 	return as;
 }
 

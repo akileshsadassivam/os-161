@@ -45,6 +45,20 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 
+typedef enum{
+	FREE,
+	FIXED,
+	DIRTY,
+	CLEAN
+}page_state;
+
+typedef struct{
+	struct addrspace* cm_addrspace;
+	vaddr_t cm_vaddr;
+	page_state cm_state;
+	uint32_t cm_timestamp;
+}coremap;
+
 /* Initialization function */
 void vm_bootstrap(void);
 
@@ -54,6 +68,9 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(int npages);
 void free_kpages(vaddr_t addr);
+
+void page_alloc(struct addrspace*, vaddr_t);
+vaddr_t page_nalloc(int npages);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);

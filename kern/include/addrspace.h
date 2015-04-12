@@ -48,6 +48,25 @@ struct vnode;
  * You write this.
  */
 
+typedef struct{
+	vaddr_t pg_vaddr;
+	paddr_t pg_paddr;
+	struct pagetable* pg_next;
+}pagetable;
+
+typedef struct{
+	int pm_read;
+	int pm_write;
+	int pm_exec;
+}permissions;
+
+typedef struct{
+	vaddr_t sg_vaddr;
+	size_t sg_numpage;
+	permissions sg_perm;
+	struct segment* sg_next;
+}segment;
+
 struct addrspace {
 #if OPT_DUMBVM
         vaddr_t as_vbase1;
@@ -59,6 +78,10 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
         /* Put stuff here for your VM system */
+	pagetable* as_pgtable;
+	segment* as_segment;
+	vaddr_t as_hpstart;
+	vaddr_t as_hpend;
 #endif
 };
 
