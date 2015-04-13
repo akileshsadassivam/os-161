@@ -52,7 +52,8 @@ as_create(void)
 	/*
 	 * Initialize as needed.
 	 */
-
+	
+	
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
@@ -117,12 +118,70 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	 * Write this.
 	 */
 
+	/*these lines are for alignment. check if they have to be put after pageallod or before that*/
+	size_t numpage;
+	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+	sz = (sz + PAGE_FRAME -1) & PAGE_FRAME;
+	numpage = sz / PAGE_SIZE;
+	/* end of alignment */
+	
+	segment *sg = kmalloc(sizeof(segment));
+	if(sg == NULL){
+		return ENOMEM;
+	}
+	
+	pagetable *pg = kmalloc(sizeof(pagetable));
+	if(pg == NULL){
+		return ENOMEM;
+	}
+
+	pg->pg_next = NULL;
+	sg->sg_next = NULL;
+	
+	sg->sg_numpage = numpage;
+	sg->sg_vaddr = vaddr;
+	
+	sg->sg_perm.pm_read=readable;
+	sg->sg_perm.pm_write = writeable;
+	sg->sg_perm.pm_exec = executable;
+	
+	if(as->as_segment == NULL){
+		as->as_segment = sg;
+	}
+	else{
+		segment *sgmt = as->as_segment;
+		while(sgmt->sg_next!=NULL){
+			sgmt = (segment*)sgmt->sg_next;
+		}
+		sgmt->sg_next = (struct segment*)sg;
+	}
+
+	pg->pg_vaddr = vaddr;
+	
+	if(as->as_pgtable == NULL){
+		as->as_pgtable = pg;
+	}
+	else{
+		pagetable *p = as->as_pgtable;
+		while(p->pg_next != NULL){
+			p=(pagetable*)p->pg_next;
+		}
+		p->pg_next = (struct pagetable*)pg;
+	}
+
+	page_alloc(as,vaddr);
+	
+	as->as_hpstart = as->as_hpend = vaddr + sz;
+
+/*
 	(void)as;
 	(void)vaddr;
 	(void)sz;
 	(void)readable;
 	(void)writeable;
 	(void)executable;
+*/
 	return EUNIMP;
 }
 
