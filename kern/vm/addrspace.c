@@ -173,7 +173,8 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	page_alloc(as,vaddr);
 	
 	as->as_hpstart = as->as_hpend = vaddr + sz;
-
+	
+	return 0;
 /*
 	(void)as;
 	(void)vaddr;
@@ -182,7 +183,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	(void)writeable;
 	(void)executable;
 */
-	return EUNIMP;
+//	return EUNIMP;
 }
 
 int
