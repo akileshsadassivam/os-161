@@ -50,14 +50,15 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 coremap* cm_entry;
 bool bootstrapped = false;
 unsigned int totalpagecnt;
-struct lock* cm_lock = NULL;
+static struct spinlock cm_lock = SPINLOCK_INITIALIZER;
+paddr_t firstaddr;
 
 void
 vm_bootstrap(void)
 {
-	paddr_t firstaddr, lastaddr, freeaddr, buf;
+	paddr_t lastaddr, freeaddr, buf;
 
-	cm_lock = lock_create("cm_lock");
+	//cm_lock = lock_create("cm_lock");
 	ram_getsize(&firstaddr, &lastaddr);
 	totalpagecnt = (unsigned int) (lastaddr - firstaddr) / PAGE_SIZE;
 
@@ -68,6 +69,7 @@ vm_bootstrap(void)
 	for(unsigned int page = 0; page < totalpagecnt; page++){
 		(cm_entry+page)->cm_addrspace = NULL;
 		(cm_entry+page)->cm_vaddr = PADDR_TO_KVADDR(buf);
+		(cm_entry+page)->cm_npages = 0;
 		(cm_entry+page)->cm_timestamp = 4294967295; 	
 
 		if(buf < freeaddr){
@@ -118,7 +120,7 @@ page_alloc(struct addrspace* as, vaddr_t va)
 {
 	bool ispagefree = false;
 	unsigned int page;
-	lock_acquire(cm_lock);
+	spinlock_acquire(&cm_lock);
 	
 	for(page = 0; page < totalpagecnt; page++){
 		if((cm_entry + page)->cm_state == FREE){
@@ -127,17 +129,31 @@ page_alloc(struct addrspace* as, vaddr_t va)
 		}
 	}
 
+	coremap* alloc = cm_entry;
 	if(!ispagefree){
-		page = make_page_avail();
+		make_page_avail(&alloc, 1);
+	}else{
+		alloc = cm_entry + page;
 	}
 
 	time_t secs;
 
-	(cm_entry+page)->cm_addrspace = as;
-	(cm_entry+page)->cm_vaddr = va;
-	gettime(&secs, &(cm_entry+page)->cm_timestamp);
-	(cm_entry+page)->cm_state = DIRTY;
-	lock_release(cm_lock);	
+	while(as->as_pgtable != NULL && as->as_pgtable->pg_vaddr != va){
+		as->as_pgtable = (pagetable*) as->as_pgtable->pg_next;
+	}
+	
+	if(as->as_pgtable == NULL){
+		return;		//Error: vaddr not found
+	}
+	as->as_pgtable->pg_paddr = firstaddr + (page * PAGE_SIZE);
+
+	alloc->cm_addrspace = as;
+	alloc->cm_vaddr = va;
+	gettime(&secs, &alloc->cm_timestamp);
+	alloc->cm_state = DIRTY;
+	alloc->cm_npages = 1;
+
+	spinlock_release(&cm_lock);
 }
 
 vaddr_t
@@ -145,33 +161,49 @@ page_nalloc(int npages)
 {
 	int freepages = 0;
 	unsigned int start = 0;
-	lock_acquire(cm_lock);
+	spinlock_acquire(&cm_lock);
 
 	for(unsigned int page = 0; page < totalpagecnt; page++){
 		if((cm_entry + page)->cm_state == FREE){
-			start = page;
 			freepages = 1;
-			for(unsigned int cont = page + 1; cont <= npages; cont++){
-				if((cm_entry + page)->cm_state == FREE){
+			for(int cont = 2; cont <= npages; cont++){
+				if((cm_entry + page + cont)->cm_state == FREE){
 					freepages++;
 				}else{
 					break;
 				}
 			}
+
+			if(freepages == npages){
+				start = page;
+				break;
+			}
 			page += freepages - 1;
 		}
 	}
 
+	coremap* allock = cm_entry;
 	if(freepages != npages){
-
+		make_page_avail(&allock, npages);
+	}else {
+		allock = cm_entry + start;
 	}
 
+	vaddr_t result = allock->cm_vaddr;
+	for(int page = 0; page < npages; page++){
+		(allock+page)->cm_state = DIRTY;
+
+		time_t secs;
+		gettime(&secs, &(allock+page)->cm_timestamp);
+	}
 	
-	lock_release(cm_lock);
+	allock->cm_npages = npages;
+	spinlock_release(&cm_lock);
+	return result;
 }
 
-unsigned int 
-make_page_avail()
+void 
+make_page_avail(coremap** temp, int npages)
 {
 	uint32_t oldertimestamp = 4294967295;
         unsigned int victimpage = 0;
@@ -182,17 +214,37 @@ make_page_avail()
                         victimpage = page;
                 }
         }
-        cm_entry += victimpage;
 
-	return victimpage;
+	//Inform the caller about the index of coremap that is to be changed
+        *temp = cm_entry + victimpage;
+
+	bzero((void*) (cm_entry+victimpage)->cm_vaddr, PAGE_SIZE);
+	if(npages > 1){
+		//TODO: logic for swapping	
+	}
 }
 
 void 
 free_kpages(vaddr_t addr)
 {
-	/* nothing - leak the memory. */
+	//lock_acquire(cm_lock);
+	spinlock_acquire(&stealmem_lock);
+	
+	for(unsigned int page = 0; page < totalpagecnt; page++){
+		if((cm_entry + page)->cm_vaddr == addr){
+			coremap* temp = cm_entry;
 
-	(void)addr;
+			for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
+				if((temp + page + npages)->cm_addrspace != NULL){
+					as_destroy((temp + page + npages)->cm_addrspace);
+				}
+				(temp + page + npages)->cm_state = FREE;
+			}
+			break;
+		}
+	}
+	//lock_release(cm_lock);
+	spinlock_release(&stealmem_lock);
 }
 
 void

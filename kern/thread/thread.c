@@ -1274,3 +1274,17 @@ interprocessor_interrupt(void)
 	curcpu->c_ipi_pending = 0;
 	spinlock_release(&curcpu->c_ipi_lock);
 }
+
+int
+sys_sbrk(userptr_t size, int32_t* retval)
+{
+
+	if((curthread->t_addrspace->as_hpend + (vaddr_t)size) < curthread->t_addrspace->as_hpstart){
+		return -1;	//TODO: find the error
+	}
+
+	*retval = curthread->t_addrspace->as_hpend;
+	curthread->t_addrspace->as_hpend += (vaddr_t)size;
+	
+	return 0;
+}

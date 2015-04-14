@@ -56,6 +56,7 @@ typedef struct{
 	struct addrspace* cm_addrspace;
 	vaddr_t cm_vaddr;
 	page_state cm_state;
+	int cm_npages;
 	uint32_t cm_timestamp;
 }coremap;
 
@@ -71,6 +72,8 @@ void free_kpages(vaddr_t addr);
 
 void page_alloc(struct addrspace*, vaddr_t);
 vaddr_t page_nalloc(int npages);
+/*Evict pages based on FIFO algorithm*/
+void make_page_avail(coremap**, int npages);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);

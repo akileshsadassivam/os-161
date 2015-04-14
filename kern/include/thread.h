@@ -166,5 +166,6 @@ void schedule(void);
  */
 void thread_consider_migration(void);
 
-
+/* system call for sbrk */
+int sys_sbrk(userptr_t, int32_t*);
 #endif /* _THREAD_H_ */
