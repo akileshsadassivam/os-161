@@ -39,9 +39,11 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
-int t_read;
-int t_write;
-int t_exec;
+//int t_read;
+//int t_write;
+//int t_exec;
+
+t_perm *start,*q;
 
 struct addrspace *
 as_create(void)
@@ -196,15 +198,36 @@ as_prepare_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
-
-	t_read = as->as_segment->sg_perm.pm_read;
-	t_write = as->as_segment->sg_perm.pm_write;
-//	t_exec = as->as_segment->sg_perm.pm_exec;
-
 	
-	as->as_segment->sg_perm.pm_read = 4;
-	as->as_segment->sg_perm.pm_write = 2;
-//	as->as_segment->sg_perm.pm_exec;
+	if(as == NULL){
+		return 0;
+	}
+
+	if(start!=NULL){
+	// we are officially screwed
+	}
+
+	segment *sg = as->as_segment;
+	while(sg!=NULL){
+		t_perm *p = kmalloc(sizeof(t_perm));
+		if(p == NULL){
+			return ENOMEM;
+		}
+		p->read = sg->sg_perm.pm_read;
+		p->write = sg->sg_perm.pm_write;
+		sg->sg_perm.pm_read = 4;
+		sg->sg_perm.pm_write = 2;
+		p->next = NULL;
+		if(start == NULL){
+			start = p;
+			q = p;
+		}
+		else{
+			q->next = (struct t_perm*)p;
+			q=(t_perm*)q->next;
+		}
+		sg = (segment*)sg->sg_next;
+	}
 
 //	(void)as;
 	return 0;
@@ -217,9 +240,16 @@ as_complete_load(struct addrspace *as)
 	 * Write this.
 	 */
 	
-	as->as_segment->sg_perm.pm_read = t_read;
-	as->as_segment->sg_perm.pm_write = t_write;
-	
+	t_perm *p = start;
+	segment *sg = as->as_segment;
+	while(sg!=NULL){
+		sg->sg_perm.pm_read = p->read;
+		sg->sg_perm.pm_write = p->write;
+		p = (t_perm*)p->next;
+		kfree(start);
+		start = p;
+		sg = (segment*)sg->sg_next;
+	}
 //	(void)as;
 	return 0;
 }

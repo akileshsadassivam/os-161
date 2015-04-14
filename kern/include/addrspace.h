@@ -61,6 +61,12 @@ typedef struct{
 }permissions;
 
 typedef struct{
+	int read;
+	int write;
+	struct t_perm *next;
+}t_perm;
+
+typedef struct{
 	vaddr_t sg_vaddr;
 	size_t sg_numpage;
 	permissions sg_perm;
