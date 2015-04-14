@@ -39,6 +39,10 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
+int t_read;
+int t_write;
+int t_exec;
+
 struct addrspace *
 as_create(void)
 {
@@ -151,7 +155,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	}
 	else{
 		segment *sgmt = as->as_segment;
-		while(sgmt->sg_next!=NULL){
+	 	while(sgmt->sg_next!=NULL){
 			sgmt = (segment*)sgmt->sg_next;
 		}
 		sgmt->sg_next = (struct segment*)sg;
@@ -193,7 +197,16 @@ as_prepare_load(struct addrspace *as)
 	 * Write this.
 	 */
 
-	(void)as;
+	t_read = as->as_segment->sg_perm.pm_read;
+	t_write = as->as_segment->sg_perm.pm_write;
+//	t_exec = as->as_segment->sg_perm.pm_exec;
+
+	
+	as->as_segment->sg_perm.pm_read = 4;
+	as->as_segment->sg_perm.pm_write = 2;
+//	as->as_segment->sg_perm.pm_exec;
+
+//	(void)as;
 	return 0;
 }
 
@@ -203,8 +216,11 @@ as_complete_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
-
-	(void)as;
+	
+	as->as_segment->sg_perm.pm_read = t_read;
+	as->as_segment->sg_perm.pm_write = t_write;
+	
+//	(void)as;
 	return 0;
 }
 
