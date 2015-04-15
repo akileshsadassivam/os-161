@@ -116,7 +116,7 @@ alloc_kpages(int npages)
 }
 
 void
-page_alloc(struct addrspace* as, vaddr_t va)
+page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 {
 	bool ispagefree = false;
 	unsigned int page;
@@ -138,14 +138,18 @@ page_alloc(struct addrspace* as, vaddr_t va)
 
 	time_t secs;
 
-	while(as->as_pgtable != NULL && as->as_pgtable->pg_vaddr != va){
-		as->as_pgtable = (pagetable*) as->as_pgtable->pg_next;
-	}
+	if(!forstack){
+		while(as->as_pgtable != NULL && as->as_pgtable->pg_vaddr != va){
+			as->as_pgtable = (pagetable*) as->as_pgtable->pg_next;
+		}
 	
-	if(as->as_pgtable == NULL){
-		return;		//Error: vaddr not found
+		if(as->as_pgtable == NULL){
+			return;		//Error: vaddr not found
+		}
+		as->as_pgtable->pg_paddr = firstaddr + (page * PAGE_SIZE);
+	}else{
+		as->as_stop = firstaddr + (page * PAGE_SIZE);
 	}
-	as->as_pgtable->pg_paddr = firstaddr + (page * PAGE_SIZE);
 
 	alloc->cm_addrspace = as;
 	alloc->cm_vaddr = va;
@@ -263,9 +267,59 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	(void)faulttype;
-	(void)faultaddress;
+	uint32_t ehi, elo;	
+	int spl;
+	paddr_t paddr;
+	bool invalidvaddr = true;
+
+	faultaddress &= PAGE_FRAME;
+
+	if(curthread->t_addrspace == NULL){
+		return EFAULT;
+	}
+
+	switch (faulttype) {
+		case VM_FAULT_READONLY:
+		break;
+		case VM_FAULT_READ:
+		case VM_FAULT_WRITE:
+		{
+			if(faultaddress >= (USERSTACK-(12 * PAGE_SIZE)) && faultaddress <= USERSTACK){
+				invalidvaddr = false;	
+				page_alloc(curthread->t_addrspace, faultaddress, true);
+				paddr = curthread->t_addrspace->as_stop;
+			}else{
+			pagetable* table = curthread->t_addrspace->as_pgtable;
+			
+			while(table != NULL){
+				if(table->pg_vaddr == faultaddress && table->pg_paddr == 0){
+					page_alloc(curthread->t_addrspace, faultaddress, false);
+					paddr = table->pg_paddr;
+					invalidvaddr = false;
+					break;
+				}
+				table = (pagetable*) table->pg_next;
+			}
+			}
+
+			if(invalidvaddr){
+				return EFAULT;
+			}
+		}
+		break;
+		default:
+			return EFAULT;
+	}
+
+	spl = splhigh();
+
+        ehi = faultaddress;
+        elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+        tlb_random(ehi, elo);
+
+        splx(spl);
 	return 0;
+
 	/*vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
 	paddr_t paddr;
 	int i;

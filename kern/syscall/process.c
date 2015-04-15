@@ -87,25 +87,26 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 
 		if(args[count] == NULL){
 			break;
-		}else{
-			usize = strlen(args[count]) + 1;
-			if(usize == 0){
-				return EINVAL;
-			}
+		}
+	}
+	kbuffer = kmalloc(count * sizeof(char));
 
-			if(usize % 4 == 0){
-				ksize = usize;
-			} else {
-				ksize = usize + (4 - (usize % 4));
-			}
+	for(int var = 0; var < count; var++){
+		usize = strlen(args[var]) + 1;
+		if(usize == 0){
+			return EINVAL;
+		}
+
+		if(usize % 4 == 0){
+			ksize = usize;
+		} else {
+			ksize = usize + (4 - (usize % 4));
+		}
 			
-			argtotalsize += ksize;
-			kbuffer = kmalloc(sizeof(char));
-			kbuffer[count] = kmalloc(sizeof(char) * ksize);
-			if((result = copyinstr((const_userptr_t)args[count], kbuffer[count], ksize, &actual)) != 0){
-				return result;
-			}
-			kbuffer++;
+		argtotalsize += ksize;
+		kbuffer[var] = kmalloc(sizeof(char) * ksize);
+		if((result = copyinstr((const_userptr_t)args[var], kbuffer[var], ksize, &actual)) != 0){
+			return result;
 		}
 	}
 
@@ -131,7 +132,7 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 		return result;
 	}
 
-	KASSERT(curthread->t_addrspace == NULL);
+	//KASSERT(curthread->t_addrspace == NULL);
 
 	//create an address space
 	curthread->t_addrspace = as_create();

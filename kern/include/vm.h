@@ -70,7 +70,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 vaddr_t alloc_kpages(int npages);
 void free_kpages(vaddr_t addr);
 
-void page_alloc(struct addrspace*, vaddr_t);
+void page_alloc(struct addrspace*, vaddr_t, bool);
 vaddr_t page_nalloc(int npages);
 /*Evict pages based on FIFO algorithm*/
 void make_page_avail(coremap**, int npages);

@@ -63,6 +63,8 @@ as_create(void)
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
+	as->as_stop = 0;
+
 	return as;
 }
 
@@ -118,7 +120,7 @@ as_activate(struct addrspace *as)
  */
 int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
-		 int readable, int writeable, int executable)
+		 int readable, int writeable, int executable, bool isstack)
 {
 	/*
 	 * Write this.
@@ -158,6 +160,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		sgmt->sg_next = (struct segment*)sg;
 	}
 	
+	if(!isstack) {
 	for(int page = 0; page<numpage; page++){
 		va = vaddr + page*PAGE_SIZE;
 		pagetable *pg = kmalloc(sizeof(pagetable));
@@ -178,11 +181,11 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 			}
 			p->pg_next = (struct pagetable*)pg;
 		}
-		page_alloc(as,va);
 	}
 
 	as->as_hpstart = as->as_hpend = vaddr + sz;
-	
+	}
+
 	return 0;
 /*
 	(void)as;
@@ -206,21 +209,26 @@ as_prepare_load(struct addrspace *as)
 		return 0;
 	}
 
-	if(start!=NULL){
-	// we are officially screwed
+	if(start != NULL){
+		// we are officially screwed
 	}
 
+	as_define_region(as, USERSTACK-(12 * PAGE_SIZE), 12 * PAGE_SIZE, 0x4, 0x2, 0, true); 
+
 	segment *sg = as->as_segment;
-	while(sg!=NULL){
+	while(sg != NULL){
 		t_perm *p = kmalloc(sizeof(t_perm));
+
 		if(p == NULL){
 			return ENOMEM;
 		}
+
 		p->read = sg->sg_perm.pm_read;
 		p->write = sg->sg_perm.pm_write;
 		sg->sg_perm.pm_read = 4;
 		sg->sg_perm.pm_write = 2;
 		p->next = NULL;
+
 		if(start == NULL){
 			start = p;
 			q = p;
