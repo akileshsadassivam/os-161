@@ -79,10 +79,55 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	/*
-	 * Write this.
+	 * traverse through lisked list, copy contents from one to another
 	 */
+	
+	pagetable *pg,*q,*strt = old->as_pgtable;
+	pagetable *pg_start = NULL;
+	while(strt != NULL){
+//		pagetable *pg;
+		pg = kmalloc(sizeof(pagetable));
+	/*	pg->pg_paddr = strt->pg_paddr;
+		pg->pg_vaddr = strt->pg_vaddr;	
+	*/	
+		memcpy(pg,strt,sizeof(pagetable));	
+		pg->pg_next = NULL;
+		strt = (pagetable*)strt->pg_next;
+		if(pg_start == NULL){
+			pg_start = pg;
+			q = pg;
+		}
+		else{
+			q->pg_next = (struct pagetable*)pg;
+			q = pg;
+		}
+	}
+	newas->as_pgtable = pg_start;
 
-	(void)old;
+	segment *sg,*r,*start = old->as_segment;
+	segment *sg_start = NULL;
+        while(start != NULL){
+                //segment *sg;
+		sg = kmalloc(sizeof(segment));
+        /*      sg->sg_vaddr = start->sg_vaddr;
+ 	        sg->sg_numpage = start->sg_numpage;
+		sg->sg_perm = start->sg_perm;
+	*/
+		memcpy(sg,start,sizeof(segment));
+                sg->sg_next = NULL;
+                start = (segment*)start->sg_next;
+                if(sg_start == NULL){
+                        sg_start = sg;
+                        r = sg;
+                }
+                else{
+                        r->sg_next = (struct segment*)sg;
+                        r = sg;
+                }
+        }
+        newas->as_segment = sg_start;
+	newas->as_hpstart = old->as_hpstart;
+	newas->as_hpend = old->as_hpend;
 	
 	*ret = newas;
 	return 0;
