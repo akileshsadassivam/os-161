@@ -38,12 +38,12 @@
 
 
 #include <machine/vm.h>
+#include <addrspace.h>
 
 /* Fault-type arguments to vm_fault() */
 #define VM_FAULT_READ        0    /* A read was attempted */
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
-
 
 typedef enum{
 	FREE,
@@ -79,5 +79,13 @@ void make_page_avail(coremap**, int npages);
 void vm_tlbshootdown_all(void);
 void vm_tlbshootdown(const struct tlbshootdown *);
 
+/*returns the number of pages allocated for the virtual address*/
+int get_page_count(vaddr_t);
+
+/*returns the total number of pages available in the system*/
+unsigned int get_total_page_count(void);
+
+/*returns the first physical page*/
+paddr_t get_first_page(void);
 
 #endif /* _VM_H_ */

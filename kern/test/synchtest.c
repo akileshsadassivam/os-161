@@ -124,8 +124,11 @@ semtest(int nargs, char **args)
 	}
 
 	for (i=0; i<NTHREADS; i++) {
+		kprintf("Acquiring V");
 		V(testsem);
+		kprintf("sleeping\n");
 		P(donesem);
+		kprintf("waking\n");
 	}
 
 	/* so we can run it again */

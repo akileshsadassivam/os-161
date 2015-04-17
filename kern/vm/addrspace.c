@@ -30,8 +30,9 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <lib.h>
+#include <clock.h>
+#include <synch.h>
 #include <addrspace.h>
-#include <vm.h>
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -39,11 +40,9 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
-//int t_read;
-//int t_write;
-//int t_exec;
-
 t_perm *start,*q;
+extern coremap* cm_entry;
+struct spinlock cm_lock;
 
 struct addrspace *
 as_create(void)
@@ -85,14 +84,20 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	pagetable *pg,*q,*strt = old->as_pgtable;
 	pagetable *pg_start = NULL;
 	while(strt != NULL){
-//		pagetable *pg;
 		pg = kmalloc(sizeof(pagetable));
-	/*	pg->pg_paddr = strt->pg_paddr;
-		pg->pg_vaddr = strt->pg_vaddr;	
-	*/	
-		memcpy(pg,strt,sizeof(pagetable));	
+		pg->pg_vaddr = strt->pg_vaddr;
+
+		if(strt->pg_paddr == 0){
+			pg->pg_paddr = 0;
+		}else {
+			page_alloc_copy(pg, pg->pg_vaddr);
+			memmove((void*)pg->pg_paddr, (void*)old->as_pgtable->pg_paddr, get_page_count(old->as_pgtable->pg_vaddr) * PAGE_SIZE);
+		}
+
+//		memcpy(pg,strt,sizeof(pagetable));	
 		pg->pg_next = NULL;
 		strt = (pagetable*)strt->pg_next;
+
 		if(pg_start == NULL){
 			pg_start = pg;
 			q = pg;
@@ -106,6 +111,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	segment *sg,*r,*start = old->as_segment;
 	segment *sg_start = NULL;
+
         while(start != NULL){
                 //segment *sg;
 		sg = kmalloc(sizeof(segment));
@@ -116,6 +122,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		memcpy(sg,start,sizeof(segment));
                 sg->sg_next = NULL;
                 start = (segment*)start->sg_next;
+
                 if(sg_start == NULL){
                         sg_start = sg;
                         r = sg;
@@ -125,13 +132,69 @@ as_copy(struct addrspace *old, struct addrspace **ret)
                         r = sg;
                 }
         }
+
         newas->as_segment = sg_start;
 	newas->as_hpstart = old->as_hpstart;
 	newas->as_hpend = old->as_hpend;
 	
+	//Update the coremap with the new addrspace
+	coremap* temp = cm_entry;
+	pg = newas->as_pgtable;
+	
+	while(pg != NULL){
+		int page;
+		for(page = 0; (temp + page)->cm_vaddr != pg->pg_vaddr; page++);
+
+		if((temp + page)->cm_addrspace == NULL){
+			(temp + page)->cm_addrspace = newas;
+		}
+	}
+
 	*ret = newas;
 	return 0;
 }
+
+void
+page_alloc_copy(pagetable* table, vaddr_t va){
+        bool ispagefree = false;
+        unsigned int page;
+        spinlock_acquire(&cm_lock);
+
+	unsigned int totalpagecnt = get_total_page_count(); 
+        for(page = 0; page < totalpagecnt; page++){
+                if((cm_entry + page)->cm_state == FREE){
+                        ispagefree = true;
+                        break;
+                }
+        }
+
+        coremap* alloc = cm_entry;
+        if(!ispagefree){
+                make_page_avail(&alloc, 1);
+        }else{
+                alloc = cm_entry + page;
+        }
+
+        time_t secs;
+        pagetable* temp = table;
+
+        while(temp != NULL && temp->pg_vaddr != va){
+                temp = (pagetable*) temp->pg_next;
+        }
+
+        if(temp == NULL){
+                return;         //Error: vaddr not found
+        }
+        temp->pg_paddr = get_first_page() + (page * PAGE_SIZE);
+
+        alloc->cm_addrspace = NULL;
+        alloc->cm_vaddr = va;
+        gettime(&secs, &alloc->cm_timestamp);
+        alloc->cm_state = DIRTY;
+        alloc->cm_npages = 1;
+
+        spinlock_release(&cm_lock);
+}                                                                                                                               133,1         29%
 
 void
 as_destroy(struct addrspace *as)
@@ -205,7 +268,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		sgmt->sg_next = (struct segment*)sg;
 	}
 	
-	if(!isstack) {
 	for(int page = 0; page<numpage; page++){
 		va = vaddr + page*PAGE_SIZE;
 		pagetable *pg = kmalloc(sizeof(pagetable));
@@ -228,7 +290,8 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		}
 	}
 
-	as->as_hpstart = as->as_hpend = vaddr + sz;
+	if(!isstack) {
+		as->as_hpstart = as->as_hpend = vaddr + sz;
 	}
 
 	return 0;

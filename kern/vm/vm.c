@@ -50,7 +50,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 coremap* cm_entry;
 bool bootstrapped = false;
 unsigned int totalpagecnt;
-static struct spinlock cm_lock = SPINLOCK_INITIALIZER;
+struct spinlock cm_lock = SPINLOCK_INITIALIZER;
 paddr_t firstaddr;
 
 void
@@ -84,6 +84,20 @@ vm_bootstrap(void)
 	bootstrapped = true;
 }
 
+int
+get_page_count(vaddr_t address)
+{
+	coremap* temp = cm_entry;
+
+	int count = 0;
+	while(temp->cm_vaddr != address){
+		count++;
+		temp = (temp + count);
+	}
+
+	return temp->cm_npages;
+}
+
 static
 paddr_t
 getppages(unsigned long npages)
@@ -115,6 +129,18 @@ alloc_kpages(int npages)
 	}
 }
 
+unsigned int
+get_total_page_count(void)
+{
+	return totalpagecnt;
+}
+
+paddr_t
+get_first_page(void)
+{
+	return firstaddr;
+}
+
 void
 page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 {
@@ -137,16 +163,17 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 	}
 
 	time_t secs;
+	pagetable* temp = as->as_pgtable;
 
 	if(!forstack){
-		while(as->as_pgtable != NULL && as->as_pgtable->pg_vaddr != va){
-			as->as_pgtable = (pagetable*) as->as_pgtable->pg_next;
+		while(temp != NULL && temp->pg_vaddr != va){
+			temp = (pagetable*) temp->pg_next;
 		}
 	
-		if(as->as_pgtable == NULL){
+		if(temp == NULL){
 			return;		//Error: vaddr not found
 		}
-		as->as_pgtable->pg_paddr = firstaddr + (page * PAGE_SIZE);
+		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
 	}else{
 		as->as_stop = firstaddr + (page * PAGE_SIZE);
 	}
@@ -194,11 +221,31 @@ page_nalloc(int npages)
 	}
 
 	vaddr_t result = allock->cm_vaddr;
+
+	pagetable* table;
+	if(curthread->t_addrspace != NULL){
+		table = curthread->t_addrspace->as_pgtable;
+	}
+
 	for(int page = 0; page < npages; page++){
 		(allock+page)->cm_state = DIRTY;
 
 		time_t secs;
 		gettime(&secs, &(allock+page)->cm_timestamp);
+
+		if(curthread->t_addrspace != NULL){
+		pagetable* prev = NULL;
+		while(table != NULL){
+			prev = table;
+			table = (pagetable*) table->pg_next;
+		}
+
+		table = kmalloc(sizeof(pagetable));
+		table->pg_vaddr = allock->cm_vaddr + (page * PAGE_SIZE);
+		table->pg_next = NULL;
+
+		prev->pg_next = (struct pagetable*) table;
+		}
 	}
 	
 	allock->cm_npages = npages;
@@ -232,7 +279,7 @@ void
 free_kpages(vaddr_t addr)
 {
 	//lock_acquire(cm_lock);
-	spinlock_acquire(&stealmem_lock);
+	spinlock_acquire(&cm_lock);
 	
 	for(unsigned int page = 0; page < totalpagecnt; page++){
 		if((cm_entry + page)->cm_vaddr == addr){
@@ -248,7 +295,7 @@ free_kpages(vaddr_t addr)
 		}
 	}
 	//lock_release(cm_lock);
-	spinlock_release(&stealmem_lock);
+	spinlock_release(&cm_lock);
 }
 
 void
@@ -285,22 +332,22 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		case VM_FAULT_WRITE:
 		{
 			if(faultaddress >= (USERSTACK-(12 * PAGE_SIZE)) && faultaddress <= USERSTACK){
-				invalidvaddr = false;	
-				page_alloc(curthread->t_addrspace, faultaddress, true);
-				paddr = curthread->t_addrspace->as_stop;
-			}else{
+				faultaddress = (unsigned int) (faultaddress/PAGE_SIZE) * PAGE_SIZE;
+			}/*else{*/
 			pagetable* table = curthread->t_addrspace->as_pgtable;
 			
 			while(table != NULL){
-				if(table->pg_vaddr == faultaddress && table->pg_paddr == 0){
-					page_alloc(curthread->t_addrspace, faultaddress, false);
+				if(table->pg_vaddr == faultaddress){
+					if(table->pg_paddr == 0){
+						page_alloc(curthread->t_addrspace, faultaddress, false);
+					}
 					paddr = table->pg_paddr;
 					invalidvaddr = false;
 					break;
 				}
 				table = (pagetable*) table->pg_next;
 			}
-			}
+			//}
 
 			if(invalidvaddr){
 				return EFAULT;
