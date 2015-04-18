@@ -59,6 +59,7 @@ as_create(void)
 	 */
 	
 	
+	as->as_parent = NULL;
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
@@ -77,6 +78,9 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
+	//Mark the parent in the new address space
+	newas->as_parent = old;
+
 	/*
 	 * traverse through lisked list, copy contents from one to another
 	 */
@@ -87,14 +91,15 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		pg = kmalloc(sizeof(pagetable));
 		pg->pg_vaddr = strt->pg_vaddr;
 
-		if(strt->pg_paddr == 0){
-			pg->pg_paddr = 0;
-		}else {
-			page_alloc_copy(pg, pg->pg_vaddr);
-			memmove((void*)pg->pg_paddr, (void*)old->as_pgtable->pg_paddr, get_page_count(old->as_pgtable->pg_vaddr) * PAGE_SIZE);
-		}
+		/*if(strt->pg_paddr == 0){
+		}else {*/
+			int npages = get_page_count(strt->pg_vaddr);
+			for(int page = 0; page < npages; page++){
+				page_alloc_copy(pg, pg->pg_vaddr + (page * PAGE_SIZE));
+				memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
+			}
+		//}
 
-//		memcpy(pg,strt,sizeof(pagetable));	
 		pg->pg_next = NULL;
 		strt = (pagetable*)strt->pg_next;
 
@@ -140,14 +145,23 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	//Update the coremap with the new addrspace
 	coremap* temp = cm_entry;
 	pg = newas->as_pgtable;
+	int totalpagecnt = get_total_page_count();
 	
 	while(pg != NULL){
-		int page;
-		for(page = 0; (temp + page)->cm_vaddr != pg->pg_vaddr; page++);
+		int page = 0;
+		//for(; (temp + page)->cm_vaddr != pg->pg_vaddr; page++);
 
-		if((temp + page)->cm_addrspace == NULL){
-			(temp + page)->cm_addrspace = newas;
+		while(page < totalpagecnt){
+			if((temp + page)->cm_vaddr == pg->pg_vaddr){
+				if((temp + page)->cm_addrspace == NULL){
+					(temp + page)->cm_addrspace = newas;
+					break;
+				}
+			}
+			page++;
 		}
+
+		pg = (pagetable*)pg->pg_next;
 	}
 
 	*ret = newas;
@@ -156,6 +170,9 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 void
 page_alloc_copy(pagetable* table, vaddr_t va){
+	(void)table;
+	(void)va;
+
         bool ispagefree = false;
         unsigned int page;
         spinlock_acquire(&cm_lock);
@@ -194,7 +211,7 @@ page_alloc_copy(pagetable* table, vaddr_t va){
         alloc->cm_npages = 1;
 
         spinlock_release(&cm_lock);
-}                                                                                                                               133,1         29%
+}
 
 void
 as_destroy(struct addrspace *as)
@@ -202,6 +219,23 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
+	pagetable *pg_prev,*pg;
+        pg=as->as_pgtable;
+        
+        while(pg != NULL){
+                pg_prev = pg;
+                pg = (pagetable*) pg->pg_next;
+                kfree(pg_prev);
+        }
+        
+        segment *sg_prev, *sg;
+        sg = as->as_segment;
+        
+        while(sg != NULL){
+                sg_prev = sg;
+                sg = (segment*) sg->sg_next;
+                kfree(sg_prev);
+        }
 	
 	kfree(as);
 }
@@ -214,6 +248,7 @@ as_activate(struct addrspace *as)
 	 */
 
 	(void)as;  // suppress warning until code gets written
+	//vm_tlbshootdown_all();
 }
 
 /*
@@ -288,6 +323,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 			}
 			p->pg_next = (struct pagetable*)pg;
 		}
+		page_alloc(as, va, false);
 	}
 
 	if(!isstack) {

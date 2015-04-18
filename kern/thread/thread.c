@@ -1309,12 +1309,13 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 			table->pg_vaddr = prevaddr + (++page * PAGE_SIZE);
 		}
 
-		table->pg_paddr = 0;
 		table->pg_next = NULL;
 
 		if(prev != NULL){
 			prev->pg_next = (struct pagetable*)table;
 		}
+
+		page_alloc(curthread->t_addrspace, table->pg_vaddr, false);	
 	}
 	
 	curthread->t_addrspace->as_hpend += size;

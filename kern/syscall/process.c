@@ -290,7 +290,7 @@ sys_waitpid(int32_t* retval, userptr_t arg1, userptr_t arg2, userptr_t arg3){
 	
 	*status = process[pid]->exitcode;
 	lock_release(process[pid]->exitlock);
-	*retval = curthread->t_pid;
+	*retval = pid;
 
 	lock_destroy(process[pid]->exitlock);
 	cv_destroy(process[pid]->exitcv);

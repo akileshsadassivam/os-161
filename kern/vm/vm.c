@@ -50,7 +50,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 coremap* cm_entry;
 bool bootstrapped = false;
 unsigned int totalpagecnt;
-struct spinlock cm_lock = SPINLOCK_INITIALIZER;
+struct spinlock cm_lock;// = SPINLOCK_INITIALIZER;
 paddr_t firstaddr;
 
 void
@@ -59,6 +59,7 @@ vm_bootstrap(void)
 	paddr_t lastaddr, freeaddr, buf;
 
 	//cm_lock = lock_create("cm_lock");
+	spinlock_init(&cm_lock);
 	ram_getsize(&firstaddr, &lastaddr);
 	totalpagecnt = (unsigned int) (lastaddr - firstaddr) / PAGE_SIZE;
 
@@ -90,12 +91,11 @@ get_page_count(vaddr_t address)
 	coremap* temp = cm_entry;
 
 	int count = 0;
-	while(temp->cm_vaddr != address){
+	while((temp+count)->cm_vaddr != address){
 		count++;
-		temp = (temp + count);
 	}
 
-	return temp->cm_npages;
+	return (temp+count)->cm_npages;
 }
 
 static
@@ -162,6 +162,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		alloc = cm_entry + page;
 	}
 
+	bzero((void*)alloc->cm_vaddr, PAGE_SIZE);
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
@@ -220,6 +221,7 @@ page_nalloc(int npages)
 		allock = cm_entry + start;
 	}
 
+	bzero((void*) allock->cm_vaddr, npages * PAGE_SIZE);
 	vaddr_t result = allock->cm_vaddr;
 
 	pagetable* table;
@@ -269,7 +271,6 @@ make_page_avail(coremap** temp, int npages)
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
 
-	bzero((void*) (cm_entry+victimpage)->cm_vaddr, PAGE_SIZE);
 	if(npages > 1){
 		//TODO: logic for swapping	
 	}
@@ -283,15 +284,18 @@ free_kpages(vaddr_t addr)
 	
 	for(unsigned int page = 0; page < totalpagecnt; page++){
 		if((cm_entry + page)->cm_vaddr == addr){
-			coremap* temp = cm_entry;
+			if((cm_entry + page)->cm_addrspace == curthread->t_addrspace ||
+				(cm_entry + page)->cm_addrspace == NULL){
+				coremap* temp = cm_entry;
 
-			for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
-				if((temp + page + npages)->cm_addrspace != NULL){
-					as_destroy((temp + page + npages)->cm_addrspace);
+				for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
+					if((temp + page + npages)->cm_addrspace != NULL){
+						as_destroy((temp + page + npages)->cm_addrspace);
+					}
+					(temp + page + npages)->cm_state = FREE;
 				}
-				(temp + page + npages)->cm_state = FREE;
+				break;
 			}
-			break;
 		}
 	}
 	//lock_release(cm_lock);
@@ -301,7 +305,15 @@ free_kpages(vaddr_t addr)
 void
 vm_tlbshootdown_all(void)
 {
-	panic("dumbvm tried to do tlb shootdown?!\n");
+	//panic("dumbvm tried to do tlb shootdown?!\n");
+
+	spinlock_acquire(&cm_lock);
+
+	for(int cnt = 0; cnt < NUM_TLB; cnt++){
+		tlb_write(TLBHI_INVALID(cnt), TLBLO_INVALID(), cnt);
+	}
+
+	spinlock_release(&cm_lock);
 }
 
 void
@@ -338,9 +350,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			
 			while(table != NULL){
 				if(table->pg_vaddr == faultaddress){
-					if(table->pg_paddr == 0){
+					/*if(table->pg_paddr == 0){
 						page_alloc(curthread->t_addrspace, faultaddress, false);
-					}
+					}*/
 					paddr = table->pg_paddr;
 					invalidvaddr = false;
 					break;

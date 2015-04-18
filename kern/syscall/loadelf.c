@@ -127,7 +127,7 @@ load_segment(struct vnode *v, off_t offset, vaddr_t vaddr,
 	 * diagnostic tool. Note that it must be disabled again before
 	 * you submit your code for grading.
 	 */
-//#if 0
+#if 0
 	{
 		size_t fillamt;
 
@@ -139,7 +139,7 @@ load_segment(struct vnode *v, off_t offset, vaddr_t vaddr,
 			result = uiomovezeros(fillamt, &u);
 		}
 	}
-//#endif
+#endif
 	
 	return result;
 }

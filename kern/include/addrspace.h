@@ -90,6 +90,8 @@ struct addrspace {
 	vaddr_t as_hpend;
 
 	vaddr_t as_stop;
+
+	struct addrspace* as_parent;
 #endif
 };
 
