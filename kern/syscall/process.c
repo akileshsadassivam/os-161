@@ -133,6 +133,7 @@ sys_execv(userptr_t arg1, userptr_t arg2){
 	}
 
 	//KASSERT(curthread->t_addrspace == NULL);
+	as_destroy(curthread->t_addrspace);
 
 	//create an address space
 	curthread->t_addrspace = as_create();
@@ -252,6 +253,9 @@ sys_waitpid(int32_t* retval, userptr_t arg1, userptr_t arg2, userptr_t arg3){
 	pid_t pid = (pid_t)arg1;
 	int* status = (int*)arg2;
 	int options = (int)arg3;
+
+	pid_t debug = curthread->t_pid;
+	(void)debug;
 
 	if(status == NULL || ((int)arg2 & 3) != 0){
 		return EFAULT;

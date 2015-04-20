@@ -1291,7 +1291,6 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 	vaddr_t alignvaddr = curthread->t_addrspace->as_hpend; // & PAGE_FRAME;
 
 	for(int page = 0; page < numpage; page++){
-		//page_alloc(curthread->t_addrspace->as_hpend + (page * PAGE_SIZE));
 		pagetable* table = curthread->t_addrspace->as_pgtable;
 		pagetable* prev;
 		vaddr_t prevaddr = 0;
@@ -1303,6 +1302,10 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 		}
 
 		table = kmalloc(sizeof(pagetable));
+		if(table == NULL){
+			return ENOMEM;
+		}
+
 		if(alignvaddr == curthread->t_addrspace->as_hpstart){
 			table->pg_vaddr = alignvaddr + (page * PAGE_SIZE);
 		}else {
@@ -1311,9 +1314,8 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 
 		table->pg_next = NULL;
 
-		if(prev != NULL){
-			prev->pg_next = (struct pagetable*)table;
-		}
+		KASSERT(prev != NULL);
+		prev->pg_next = (struct pagetable*)table;
 
 		page_alloc(curthread->t_addrspace, table->pg_vaddr, false);	
 	}

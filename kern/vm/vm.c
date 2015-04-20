@@ -90,9 +90,12 @@ get_page_count(vaddr_t address)
 {
 	coremap* temp = cm_entry;
 
-	int count = 0;
+	unsigned int count = 0;
 	while((temp+count)->cm_vaddr != address){
 		count++;
+		if(count >= totalpagecnt){
+			break;
+		}
 	}
 
 	return (temp+count)->cm_npages;
@@ -172,6 +175,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		}
 	
 		if(temp == NULL){
+			panic("Page table NULL");
 			return;		//Error: vaddr not found
 		}
 		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
@@ -243,13 +247,20 @@ page_nalloc(int npages)
 		}
 
 		table = kmalloc(sizeof(pagetable));
+		
+		if(table == NULL){
+			return 0;
+		}
+
 		table->pg_vaddr = allock->cm_vaddr + (page * PAGE_SIZE);
+		table->pg_paddr = firstaddr + ((start + page) * PAGE_SIZE);
 		table->pg_next = NULL;
 
 		prev->pg_next = (struct pagetable*) table;
 		}
 	}
 	
+	allock->cm_addrspace = curthread->t_addrspace;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
@@ -290,7 +301,27 @@ free_kpages(vaddr_t addr)
 
 				for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
 					if((temp + page + npages)->cm_addrspace != NULL){
-						as_destroy((temp + page + npages)->cm_addrspace);
+						pagetable* table = (temp + page + npages)->cm_addrspace->as_pgtable;
+						pagetable* prev = NULL;
+						
+						while(table != NULL){
+							if(table->pg_vaddr == addr){
+								if(prev != NULL){
+									prev->pg_next = table->pg_next;
+								}else{
+									prev = (pagetable*) table->pg_next;
+								}
+								kfree(table);
+								break;
+								
+							}else{							
+								prev = table;
+								table = (pagetable*)table->pg_next;
+							}
+						}
+
+						(temp + page + npages)->cm_addrspace = NULL;	
+						//vm_tlbshootdown_all();
 					}
 					(temp + page + npages)->cm_state = FREE;
 				}
@@ -307,13 +338,15 @@ vm_tlbshootdown_all(void)
 {
 	//panic("dumbvm tried to do tlb shootdown?!\n");
 
-	spinlock_acquire(&cm_lock);
+//	spinlock_acquire(&cm_lock);
+	int spl = splhigh();
 
 	for(int cnt = 0; cnt < NUM_TLB; cnt++){
 		tlb_write(TLBHI_INVALID(cnt), TLBLO_INVALID(), cnt);
 	}
 
-	spinlock_release(&cm_lock);
+	splx(spl);
+//	spinlock_release(&cm_lock);
 }
 
 void
@@ -343,9 +376,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		case VM_FAULT_READ:
 		case VM_FAULT_WRITE:
 		{
-			if(faultaddress >= (USERSTACK-(12 * PAGE_SIZE)) && faultaddress <= USERSTACK){
-				faultaddress = (unsigned int) (faultaddress/PAGE_SIZE) * PAGE_SIZE;
-			}/*else{*/
 			pagetable* table = curthread->t_addrspace->as_pgtable;
 			
 			while(table != NULL){

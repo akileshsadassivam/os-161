@@ -59,7 +59,7 @@ as_create(void)
 	 */
 	
 	
-	as->as_parent = NULL;
+	//as->as_parent = NULL;
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
@@ -79,7 +79,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	//Mark the parent in the new address space
-	newas->as_parent = old;
+	//newas->as_parent = old;
 
 	/*
 	 * traverse through lisked list, copy contents from one to another
@@ -89,15 +89,20 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	pagetable *pg_start = NULL;
 	while(strt != NULL){
 		pg = kmalloc(sizeof(pagetable));
+
+		if(pg == NULL){
+			return ENOMEM;
+		}
+
 		pg->pg_vaddr = strt->pg_vaddr;
 
 		/*if(strt->pg_paddr == 0){
 		}else {*/
-			int npages = get_page_count(strt->pg_vaddr);
+			/*int npages = get_page_count(strt->pg_vaddr);
 			for(int page = 0; page < npages; page++){
 				page_alloc_copy(pg, pg->pg_vaddr + (page * PAGE_SIZE));
 				memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
-			}
+			}*/
 		//}
 
 		pg->pg_next = NULL;
@@ -118,12 +123,12 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	segment *sg_start = NULL;
 
         while(start != NULL){
-                //segment *sg;
 		sg = kmalloc(sizeof(segment));
-        /*      sg->sg_vaddr = start->sg_vaddr;
- 	        sg->sg_numpage = start->sg_numpage;
-		sg->sg_perm = start->sg_perm;
-	*/
+
+		if(sg ==NULL){
+			return ENOMEM;
+		}
+
 		memcpy(sg,start,sizeof(segment));
                 sg->sg_next = NULL;
                 start = (segment*)start->sg_next;
@@ -143,13 +148,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	newas->as_hpend = old->as_hpend;
 	
 	//Update the coremap with the new addrspace
-	coremap* temp = cm_entry;
+	//coremap* temp = cm_entry;
 	pg = newas->as_pgtable;
-	int totalpagecnt = get_total_page_count();
+	strt = old->as_pgtable;
+	//int totalpagecnt = get_total_page_count();
 	
 	while(pg != NULL){
-		int page = 0;
-		//for(; (temp + page)->cm_vaddr != pg->pg_vaddr; page++);
+		/*int page = 0;
 
 		while(page < totalpagecnt){
 			if((temp + page)->cm_vaddr == pg->pg_vaddr){
@@ -159,8 +164,15 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				}
 			}
 			page++;
-		}
+		}*/
 
+		int npages = get_page_count(strt->pg_vaddr);
+                for(int page = 0; page < npages; page++){
+                        page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
+                        memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
+                }
+
+		strt = (pagetable*)strt->pg_next;
 		pg = (pagetable*)pg->pg_next;
 	}
 
@@ -168,7 +180,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	return 0;
 }
 
-void
+/*void
 page_alloc_copy(pagetable* table, vaddr_t va){
 	(void)table;
 	(void)va;
@@ -211,7 +223,7 @@ page_alloc_copy(pagetable* table, vaddr_t va){
         alloc->cm_npages = 1;
 
         spinlock_release(&cm_lock);
-}
+}*/
 
 void
 as_destroy(struct addrspace *as)
@@ -219,6 +231,10 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
+	if(as == NULL){
+		return;
+	}
+
 	pagetable *pg_prev,*pg;
         pg=as->as_pgtable;
         
@@ -357,7 +373,7 @@ as_prepare_load(struct addrspace *as)
 		// we are officially screwed
 	}
 
-	as_define_region(as, USERSTACK-(12 * PAGE_SIZE), 12 * PAGE_SIZE, 0x4, 0x2, 0, true); 
+	as_define_region(as, USERSTACK-(12 * PAGE_SIZE), 12 * PAGE_SIZE, 0x4, 0x2, 0x1, true); 
 
 	segment *sg = as->as_segment;
 	while(sg != NULL){
