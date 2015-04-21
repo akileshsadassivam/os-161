@@ -41,8 +41,8 @@
  */
 
 t_perm *start,*q;
-extern coremap* cm_entry;
-struct spinlock cm_lock;
+//extern coremap* cm_entry;
+//struct spinlock cm_lock;
 
 struct addrspace *
 as_create(void)
@@ -169,7 +169,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		int npages = get_page_count(strt->pg_vaddr);
                 for(int page = 0; page < npages; page++){
                         page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
-                        memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
+                        //memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
+			memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
                 }
 
 		strt = (pagetable*)strt->pg_next;
@@ -264,7 +265,7 @@ as_activate(struct addrspace *as)
 	 */
 
 	(void)as;  // suppress warning until code gets written
-	//vm_tlbshootdown_all();
+	vm_tlbshootdown_all();
 }
 
 /*
@@ -288,9 +289,11 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	/*these lines are for alignment. check if they have to be put after pageallod or before that*/
 	int numpage;
 	vaddr_t va;
+
 	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
-	vaddr &= PAGE_FRAME;
 	sz = (sz + PAGE_SIZE -1) & PAGE_FRAME;
+
+	vaddr &= PAGE_FRAME;
 	numpage = sz / PAGE_SIZE;
 	/* end of alignment */
 	
@@ -319,7 +322,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		sgmt->sg_next = (struct segment*)sg;
 	}
 	
-	for(int page = 0; page<numpage; page++){
+	for(int page = 0; page < numpage; page++){
 		va = vaddr + page*PAGE_SIZE;
 		pagetable *pg = kmalloc(sizeof(pagetable));
         	if(pg == NULL){

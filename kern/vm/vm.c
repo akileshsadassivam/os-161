@@ -88,17 +88,22 @@ vm_bootstrap(void)
 int
 get_page_count(vaddr_t address)
 {
+	spinlock_acquire(&cm_lock);
+
 	coremap* temp = cm_entry;
 
 	unsigned int count = 0;
 	while((temp+count)->cm_vaddr != address){
 		count++;
 		if(count >= totalpagecnt){
-			break;
+			return 0;
 		}
 	}
 
-	return (temp+count)->cm_npages;
+	int result = (temp+count)->cm_npages;
+	spinlock_release(&cm_lock);
+
+	return result;
 }
 
 static
@@ -175,7 +180,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		}
 	
 		if(temp == NULL){
-			panic("Page table NULL");
+			spinlock_release(&cm_lock);
 			return;		//Error: vaddr not found
 		}
 		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
@@ -228,10 +233,10 @@ page_nalloc(int npages)
 	bzero((void*) allock->cm_vaddr, npages * PAGE_SIZE);
 	vaddr_t result = allock->cm_vaddr;
 
-	pagetable* table;
+	/*pagetable* table;
 	if(curthread->t_addrspace != NULL){
 		table = curthread->t_addrspace->as_pgtable;
-	}
+	}*/
 
 	for(int page = 0; page < npages; page++){
 		(allock+page)->cm_state = DIRTY;
@@ -239,7 +244,7 @@ page_nalloc(int npages)
 		time_t secs;
 		gettime(&secs, &(allock+page)->cm_timestamp);
 
-		if(curthread->t_addrspace != NULL){
+	/*	if(curthread->t_addrspace != NULL){
 		pagetable* prev = NULL;
 		while(table != NULL){
 			prev = table;
@@ -249,6 +254,7 @@ page_nalloc(int npages)
 		table = kmalloc(sizeof(pagetable));
 		
 		if(table == NULL){
+			spinlock_release(&cm_lock);
 			return 0;
 		}
 
@@ -257,10 +263,10 @@ page_nalloc(int npages)
 		table->pg_next = NULL;
 
 		prev->pg_next = (struct pagetable*) table;
-		}
+		}*/
 	}
 	
-	allock->cm_addrspace = curthread->t_addrspace;
+	//allock->cm_addrspace = curthread->t_addrspace;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
