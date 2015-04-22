@@ -150,6 +150,25 @@ get_first_page(void)
 }
 
 void
+delete_coremap(struct addrspace* as){
+	spinlock_acquire(&cm_lock);
+
+	coremap* temp = cm_entry;
+	paddr_t buf = firstaddr;
+	for(unsigned int page = 0; page < totalpagecnt;page++){
+		if((temp + page)->cm_addrspace == as){
+			(temp + page)->cm_addrspace = NULL;
+			(temp + page)->cm_state = FREE;
+
+			(temp + page)->cm_vaddr = PADDR_TO_KVADDR(buf);
+		}
+		
+		buf += PAGE_SIZE;
+	}
+	spinlock_release(&cm_lock);
+}
+
+void
 page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 {
 	bool ispagefree = false;
@@ -170,7 +189,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		alloc = cm_entry + page;
 	}
 
-	bzero((void*)alloc->cm_vaddr, PAGE_SIZE);
+	//bzero((void*)alloc->cm_vaddr, PAGE_SIZE);
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
@@ -230,7 +249,7 @@ page_nalloc(int npages)
 		allock = cm_entry + start;
 	}
 
-	bzero((void*) allock->cm_vaddr, npages * PAGE_SIZE);
+	//bzero((void*) allock->cm_vaddr, npages * PAGE_SIZE);
 	vaddr_t result = allock->cm_vaddr;
 
 	/*pagetable* table;
@@ -266,7 +285,7 @@ page_nalloc(int npages)
 		}*/
 	}
 	
-	//allock->cm_addrspace = curthread->t_addrspace;
+	allock->cm_addrspace = curthread->t_addrspace;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
@@ -287,6 +306,18 @@ make_page_avail(coremap** temp, int npages)
 
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
+
+	/*if((cm_entry + victimpage)->cm_addrspace != NULL){
+		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
+		while(pg != NULL){
+			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
+				pg->pg_paddr = 0;
+				break;
+			}
+	
+			pg = (pagetable*) pg->pg_next;
+		}
+	}*/
 
 	if(npages > 1){
 		//TODO: logic for swapping	
@@ -386,9 +417,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			
 			while(table != NULL){
 				if(table->pg_vaddr == faultaddress){
-					/*if(table->pg_paddr == 0){
+					if(table->pg_paddr == 0){
 						page_alloc(curthread->t_addrspace, faultaddress, false);
-					}*/
+						/*if(curthread->t_addrspace->as_parent != NULL){
+							pagetable* pg = curthread->t_addrspace->as_parent->as_pgtable;
+							memmove((void*)PADDR_TO_KVADDR(table->pg_paddr), (void*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
+						}*/
+					}
 					paddr = table->pg_paddr;
 					invalidvaddr = false;
 					break;

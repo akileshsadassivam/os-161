@@ -59,7 +59,7 @@ as_create(void)
 	 */
 	
 	
-	//as->as_parent = NULL;
+	as->as_parent = NULL;
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
@@ -79,7 +79,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	//Mark the parent in the new address space
-	//newas->as_parent = old;
+	newas->as_parent = old;
 
 	/*
 	 * traverse through lisked list, copy contents from one to another
@@ -95,6 +95,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		}
 
 		pg->pg_vaddr = strt->pg_vaddr;
+		pg->pg_paddr = 0;
 
 		/*if(strt->pg_paddr == 0){
 		}else {*/
@@ -152,7 +153,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	pg = newas->as_pgtable;
 	strt = old->as_pgtable;
 	//int totalpagecnt = get_total_page_count();
-	
+
 	while(pg != NULL){
 		/*int page = 0;
 
@@ -180,51 +181,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	*ret = newas;
 	return 0;
 }
-
-/*void
-page_alloc_copy(pagetable* table, vaddr_t va){
-	(void)table;
-	(void)va;
-
-        bool ispagefree = false;
-        unsigned int page;
-        spinlock_acquire(&cm_lock);
-
-	unsigned int totalpagecnt = get_total_page_count(); 
-        for(page = 0; page < totalpagecnt; page++){
-                if((cm_entry + page)->cm_state == FREE){
-                        ispagefree = true;
-                        break;
-                }
-        }
-
-        coremap* alloc = cm_entry;
-        if(!ispagefree){
-                make_page_avail(&alloc, 1);
-        }else{
-                alloc = cm_entry + page;
-        }
-
-        time_t secs;
-        pagetable* temp = table;
-
-        while(temp != NULL && temp->pg_vaddr != va){
-                temp = (pagetable*) temp->pg_next;
-        }
-
-        if(temp == NULL){
-                return;         //Error: vaddr not found
-        }
-        temp->pg_paddr = get_first_page() + (page * PAGE_SIZE);
-
-        alloc->cm_addrspace = NULL;
-        alloc->cm_vaddr = va;
-        gettime(&secs, &alloc->cm_timestamp);
-        alloc->cm_state = DIRTY;
-        alloc->cm_npages = 1;
-
-        spinlock_release(&cm_lock);
-}*/
 
 void
 as_destroy(struct addrspace *as)
@@ -254,6 +210,7 @@ as_destroy(struct addrspace *as)
                 kfree(sg_prev);
         }
 	
+	delete_coremap(as);
 	kfree(as);
 }
 
@@ -347,6 +304,8 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	if(!isstack) {
 		as->as_hpstart = as->as_hpend = vaddr + sz;
+	}else{
+		as->as_stop = vaddr;
 	}
 
 	return 0;
@@ -376,7 +335,9 @@ as_prepare_load(struct addrspace *as)
 		// we are officially screwed
 	}
 
-	as_define_region(as, USERSTACK-(12 * PAGE_SIZE), 12 * PAGE_SIZE, 0x4, 0x2, 0x1, true); 
+	//int stacknpages = get_total_page_count()/4;
+
+	as_define_region(as, USERSTACK-(8 * PAGE_SIZE), 8 * PAGE_SIZE, 0x4, 0x2, 0x1, true); 
 
 	segment *sg = as->as_segment;
 	while(sg != NULL){

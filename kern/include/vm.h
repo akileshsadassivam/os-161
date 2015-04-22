@@ -88,4 +88,7 @@ unsigned int get_total_page_count(void);
 /*returns the first physical page*/
 paddr_t get_first_page(void);
 
+/*delete the content of the given address space*/
+void delete_coremap(struct addrspace*);
+
 #endif /* _VM_H_ */

@@ -1278,17 +1278,54 @@ interprocessor_interrupt(void)
 int
 sys_sbrk(userptr_t arg1, int32_t* retval)
 {
+	/*if((int*)arg1 == (int*) 0x40000000 || (int*)arg1 == (int*) 0x80000000){
+		return EINVAL;
+	}*/
+
 	vaddr_t size = (vaddr_t)arg1;
 
-	if((curthread->t_addrspace->as_hpend + size) < curthread->t_addrspace->as_hpstart){
-		return -1;	//TODO: find the error
+	if((curthread->t_addrspace->as_hpend + size) < curthread->t_addrspace->as_hpstart || size >= 0x80000000){
+		return EINVAL;
+	}else if((curthread->t_addrspace->as_hpend + size) >= 0x40000000){
+		return ENOMEM;
 	}
 
 	*retval = curthread->t_addrspace->as_hpend;
 	size = (size % 4 == 0)? size: ((size + 4)/4);		//Rounding size to 4
+
+//	int numpage = size/PAGE_SIZE ? (size/PAGE_SIZE) : ((size == 0) ? 0 : 1);
+	int numpage = size/PAGE_SIZE;
+	if(size%PAGE_SIZE){
+		numpage++;
+	}
+
+	if(size < PAGE_SIZE && (PAGE_SIZE - (curthread->t_addrspace->as_hpend - curthread->t_addrspace->as_hpstart)%PAGE_SIZE) > size){
+		if(curthread->t_addrspace->as_hpend == curthread->t_addrspace->as_hpstart && numpage > 0){
+			pagetable* table = curthread->t_addrspace->as_pgtable;
+			pagetable* prev;
+
+			while(table != NULL){
+				prev = table;
+				table = (pagetable*) table->pg_next;
+			}
+
+			table = kmalloc(sizeof(pagetable));
+			if(table == NULL){
+				return ENOMEM;
+			}
+
+			table->pg_vaddr = curthread->t_addrspace->as_hpend;
+			table->pg_next = NULL;
+
+			prev->pg_next = (struct pagetable*) table;
+			page_alloc(curthread->t_addrspace, curthread->t_addrspace->as_hpend, false);
+		}
+		curthread->t_addrspace->as_hpend += size;
+
+		return 0;
+	}
 	
-	int numpage = size/PAGE_SIZE ? (size/PAGE_SIZE) : ((size == 0) ? 0 : 1);
-	vaddr_t alignvaddr = curthread->t_addrspace->as_hpend; // & PAGE_FRAME;
+	//vaddr_t alignvaddr = curthread->t_addrspace->as_hpend; // & PAGE_FRAME;
 
 	for(int page = 0; page < numpage; page++){
 		pagetable* table = curthread->t_addrspace->as_pgtable;
@@ -1306,12 +1343,13 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 			return ENOMEM;
 		}
 
-		if(alignvaddr == curthread->t_addrspace->as_hpstart){
-			table->pg_vaddr = alignvaddr + (page * PAGE_SIZE);
-		}else {
-			table->pg_vaddr = prevaddr + (++page * PAGE_SIZE);
-		}
+		//if(alignvaddr == curthread->t_addrspace->as_hpstart){
+			table->pg_vaddr = prevaddr + PAGE_SIZE;
+		//}else {
+		//	table->pg_vaddr = prevaddr + (++page * PAGE_SIZE);
+		//}
 
+		//table->pg_paddr = 0;
 		table->pg_next = NULL;
 
 		KASSERT(prev != NULL);
