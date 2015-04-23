@@ -73,7 +73,7 @@ void free_kpages(vaddr_t addr);
 void page_alloc(struct addrspace*, vaddr_t, bool);
 vaddr_t page_nalloc(int npages);
 /*Evict pages based on FIFO algorithm*/
-void make_page_avail(coremap**, int npages);
+unsigned int make_page_avail(coremap**, int npages);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);

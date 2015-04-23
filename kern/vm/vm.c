@@ -184,12 +184,12 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 
 	coremap* alloc = cm_entry;
 	if(!ispagefree){
-		make_page_avail(&alloc, 1);
+		page = make_page_avail(&alloc, 1);
 	}else{
 		alloc = cm_entry + page;
 	}
 
-	//bzero((void*)alloc->cm_vaddr, PAGE_SIZE);
+	//bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
@@ -244,12 +244,12 @@ page_nalloc(int npages)
 
 	coremap* allock = cm_entry;
 	if(freepages != npages){
-		make_page_avail(&allock, npages);
+		start = make_page_avail(&allock, npages);
 	}else {
 		allock = cm_entry + start;
 	}
 
-	//bzero((void*) allock->cm_vaddr, npages * PAGE_SIZE);
+	//bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
 	vaddr_t result = allock->cm_vaddr;
 
 	/*pagetable* table;
@@ -291,7 +291,7 @@ page_nalloc(int npages)
 	return result;
 }
 
-void 
+unsigned int
 make_page_avail(coremap** temp, int npages)
 {
 	uint32_t oldertimestamp = 4294967295;
@@ -307,7 +307,9 @@ make_page_avail(coremap** temp, int npages)
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
 
-	/*if((cm_entry + victimpage)->cm_addrspace != NULL){
+	//vm_tlbshootdown_all();
+
+	if((cm_entry + victimpage)->cm_addrspace != NULL){
 		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
 		while(pg != NULL){
 			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
@@ -317,11 +319,13 @@ make_page_avail(coremap** temp, int npages)
 	
 			pg = (pagetable*) pg->pg_next;
 		}
-	}*/
+	}
 
 	if(npages > 1){
 		//TODO: logic for swapping	
 	}
+
+	return victimpage;
 }
 
 void 
@@ -409,6 +413,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	switch (faulttype) {
 		case VM_FAULT_READONLY:
+			panic("Read only");
 		break;
 		case VM_FAULT_READ:
 		case VM_FAULT_WRITE:

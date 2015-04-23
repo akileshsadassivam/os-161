@@ -337,7 +337,7 @@ as_prepare_load(struct addrspace *as)
 
 	//int stacknpages = get_total_page_count()/4;
 
-	as_define_region(as, USERSTACK-(8 * PAGE_SIZE), 8 * PAGE_SIZE, 0x4, 0x2, 0x1, true); 
+	as_define_region(as, USERSTACK-(12 * PAGE_SIZE), 12 * PAGE_SIZE, 0x4, 0x2, 0, true); 
 
 	segment *sg = as->as_segment;
 	while(sg != NULL){
