@@ -161,6 +161,7 @@ delete_coremap(struct addrspace* as){
 			(temp + page)->cm_state = FREE;
 
 			(temp + page)->cm_vaddr = PADDR_TO_KVADDR(buf);
+			bzero((int*)(temp + page)->cm_vaddr, PAGE_SIZE);
 		}
 		
 		buf += PAGE_SIZE;
@@ -189,7 +190,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		alloc = cm_entry + page;
 	}
 
-	//bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
+	bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
@@ -249,7 +250,7 @@ page_nalloc(int npages)
 		allock = cm_entry + start;
 	}
 
-	//bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
+	bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
 	vaddr_t result = allock->cm_vaddr;
 
 	/*pagetable* table;
@@ -424,10 +425,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 				if(table->pg_vaddr == faultaddress){
 					if(table->pg_paddr == 0){
 						page_alloc(curthread->t_addrspace, faultaddress, false);
-						/*if(curthread->t_addrspace->as_parent != NULL){
-							pagetable* pg = curthread->t_addrspace->as_parent->as_pgtable;
-							memmove((void*)PADDR_TO_KVADDR(table->pg_paddr), (void*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
-						}*/
+						//if(curthread->t_addrspace->as_parent != NULL){
+						//	pagetable* pg = curthread->t_addrspace->as_parent->as_pgtable;
+						//	memmove((void*)PADDR_TO_KVADDR(table->pg_paddr), (void*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
+						//}
 					}
 					paddr = table->pg_paddr;
 					invalidvaddr = false;
