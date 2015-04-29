@@ -161,7 +161,7 @@ delete_coremap(struct addrspace* as){
 			(temp + page)->cm_state = FREE;
 
 			(temp + page)->cm_vaddr = PADDR_TO_KVADDR(buf);
-			bzero((int*)(temp + page)->cm_vaddr, PAGE_SIZE);
+			//bzero((int*)(temp + page)->cm_vaddr, PAGE_SIZE);
 		}
 		
 		buf += PAGE_SIZE;
@@ -188,9 +188,9 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		page = make_page_avail(&alloc, 1);
 	}else{
 		alloc = cm_entry + page;
+		bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
 	}
 
-	bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
@@ -205,7 +205,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		}
 		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
 	}else{
-		as->as_stop = firstaddr + (page * PAGE_SIZE);
+		//as->as_stop = firstaddr + (page * PAGE_SIZE);
 	}
 
 	alloc->cm_addrspace = as;
@@ -259,7 +259,7 @@ page_nalloc(int npages)
 	}*/
 
 	for(int page = 0; page < npages; page++){
-		(allock+page)->cm_state = DIRTY;
+		(allock+page)->cm_state = FIXED;
 
 		time_t secs;
 		gettime(&secs, &(allock+page)->cm_timestamp);
@@ -286,7 +286,7 @@ page_nalloc(int npages)
 		}*/
 	}
 	
-	allock->cm_addrspace = curthread->t_addrspace;
+	//allock->cm_addrspace = curthread->t_addrspace;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
@@ -299,18 +299,19 @@ make_page_avail(coremap** temp, int npages)
         unsigned int victimpage = 0;
 
         for(unsigned int page = 0; page < totalpagecnt; page++){
-        	if((cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
+        	if(/*(cm_entry + page)->cm_addrspace == curthread->t_addrspace &&*/ (cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
                         oldertimestamp = (cm_entry + page)->cm_timestamp;
                         victimpage = page;
                 }
         }
 
+	KASSERT(victimpage != 0);
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
 
 	//vm_tlbshootdown_all();
 
-	if((cm_entry + victimpage)->cm_addrspace != NULL){
+	/*if((cm_entry + victimpage)->cm_addrspace != NULL){
 		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
 		while(pg != NULL){
 			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
@@ -320,7 +321,7 @@ make_page_avail(coremap** temp, int npages)
 	
 			pg = (pagetable*) pg->pg_next;
 		}
-	}
+	}*/
 
 	if(npages > 1){
 		//TODO: logic for swapping	

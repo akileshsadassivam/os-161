@@ -59,11 +59,11 @@ as_create(void)
 	 */
 	
 	
-	as->as_parent = NULL;
+	//as->as_parent = NULL;
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
-	as->as_stop = 0;
+	//as->as_stop = 0;
 
 	return as;
 }
@@ -79,7 +79,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	//Mark the parent in the new address space
-	newas->as_parent = old;
+	//newas->as_parent = old;
 
 	/*
 	 * traverse through lisked list, copy contents from one to another
@@ -167,14 +167,14 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			page++;
 		}*/
 
-		int npages = get_page_count(strt->pg_vaddr);
-                for(int page = 0; page < npages; page++){
-			if(strt->pg_paddr != 0){
+		if(strt->pg_paddr != 0){
+			int npages = get_page_count(strt->pg_vaddr);
+                	for(int page = 0; page < npages; page++){
 	                        page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
         	                //memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
 				memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
-               		 }
-		}
+			}
+               	}
 
 		strt = (pagetable*)strt->pg_next;
 		pg = (pagetable*)pg->pg_next;
@@ -193,6 +193,7 @@ as_destroy(struct addrspace *as)
 	if(as == NULL){
 		return;
 	}
+
 
 	pagetable *pg_prev,*pg;
         pg=as->as_pgtable;
@@ -214,6 +215,7 @@ as_destroy(struct addrspace *as)
 	
 	delete_coremap(as);
 	kfree(as);
+	//vm_tlbshootdown_all();
 }
 
 void
@@ -307,7 +309,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	if(!isstack) {
 		as->as_hpstart = as->as_hpend = vaddr + sz;
 	}else{
-		as->as_stop = vaddr;
+		//as->as_stop = vaddr;
 	}
 
 	return 0;

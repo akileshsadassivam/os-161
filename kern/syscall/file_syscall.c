@@ -181,6 +181,11 @@ sys_write(int fd, userptr_t buf, size_t count, int* retval)
 	uiovar.uio_segflg = UIO_USERSPACE;
 	uiovar.uio_iov = &iovctr;
 	uiovar.uio_iovcnt = 1;
+	
+	if(curthread->filetable[fd] == NULL){
+		panic("Lock somehow vanished\n");
+	}
+
 	lock_acquire(curthread->filetable[fd]->lock);
 	uiovar.uio_offset = curthread->filetable[fd]->offset;/*is it 0 or the offset from current thread file table*/
 	uiovar.uio_resid = count;

@@ -1345,6 +1345,7 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 
 		//if(alignvaddr == curthread->t_addrspace->as_hpstart){
 			table->pg_vaddr = prevaddr + PAGE_SIZE;
+			table->pg_paddr = 0;
 		//}else {
 		//	table->pg_vaddr = prevaddr + (++page * PAGE_SIZE);
 		//}
@@ -1355,7 +1356,7 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 		KASSERT(prev != NULL);
 		prev->pg_next = (struct pagetable*)table;
 
-		page_alloc(curthread->t_addrspace, table->pg_vaddr, false);	
+		//page_alloc(curthread->t_addrspace, table->pg_vaddr, false);	
 	}
 	
 	curthread->t_addrspace->as_hpend += size;
