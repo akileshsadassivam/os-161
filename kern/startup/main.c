@@ -48,6 +48,7 @@
 #include <syscall.h>
 #include <test.h>
 #include <version.h>
+#include <swap.h>
 #include "autoconf.h"  // for pseudoconfig
 
 
@@ -100,7 +101,7 @@ boot(void)
 	kprintf("%s", harvard_copyright);
 	kprintf("\n");
 
-	kprintf("harishva@buffalo.edu's system version %s (%s #%d)\n", 
+	kprintf("harishva@buffalo.edu's && asadassi@buffalo.edu's system version %s (%s #%d)\n", 
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
@@ -133,6 +134,8 @@ boot(void)
 	 */
 	COMPILE_ASSERT(sizeof(userptr_t) == sizeof(char *));
 	COMPILE_ASSERT(sizeof(*(userptr_t)0) == sizeof(char));
+	
+	swapspace_init();
 }
 
 /*

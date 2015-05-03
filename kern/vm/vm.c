@@ -38,6 +38,7 @@
 #include <addrspace.h>
 #include <clock.h>
 #include <synch.h>
+#include <swap.h>
 #include <vm.h>
 
 /* under dumbvm, always have 48k of user stack */
@@ -204,6 +205,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 			return;		//Error: vaddr not found
 		}
 		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
+		temp->pg_inmem = true;
 	}else{
 		//as->as_stop = firstaddr + (page * PAGE_SIZE);
 	}
@@ -309,22 +311,24 @@ make_page_avail(coremap** temp, int npages)
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
 
-	//vm_tlbshootdown_all();
-
-	/*if((cm_entry + victimpage)->cm_addrspace != NULL){
+	if((cm_entry + victimpage)->cm_addrspace != NULL){
 		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
 		while(pg != NULL){
 			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
+				swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
 				pg->pg_paddr = 0;
+				pg->pg_inmem = false;
 				break;
 			}
-	
+
 			pg = (pagetable*) pg->pg_next;
 		}
-	}*/
+	}
 
+	vm_tlbshootdown_all();
 	if(npages > 1){
 		//TODO: logic for swapping	
+		panic("npages>1");
 	}
 
 	return victimpage;
@@ -424,8 +428,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			
 			while(table != NULL){
 				if(table->pg_vaddr == faultaddress){
-					if(table->pg_paddr == 0){
+					if(table->pg_paddr == 0 ){
 						page_alloc(curthread->t_addrspace, faultaddress, false);
+						if(table->pg_inmem == false){
+							swap_in(curthread->t_addrspace, faultaddress, (void*)table->pg_paddr);
+							table->pg_inmem = true;
+						}
 						//if(curthread->t_addrspace->as_parent != NULL){
 						//	pagetable* pg = curthread->t_addrspace->as_parent->as_pgtable;
 						//	memmove((void*)PADDR_TO_KVADDR(table->pg_paddr), (void*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);

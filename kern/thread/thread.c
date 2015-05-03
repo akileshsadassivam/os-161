@@ -1346,6 +1346,7 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 		//if(alignvaddr == curthread->t_addrspace->as_hpstart){
 			table->pg_vaddr = prevaddr + PAGE_SIZE;
 			table->pg_paddr = 0;
+			//table->pg_inmem = true;
 		//}else {
 		//	table->pg_vaddr = prevaddr + (++page * PAGE_SIZE);
 		//}

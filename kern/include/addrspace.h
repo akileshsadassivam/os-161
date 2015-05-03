@@ -51,6 +51,7 @@ struct vnode;
 typedef struct{
 	vaddr_t pg_vaddr;
 	paddr_t pg_paddr;
+	bool pg_inmem;
 	struct pagetable* pg_next;
 }pagetable;
 

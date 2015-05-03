@@ -96,6 +96,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 		pg->pg_vaddr = strt->pg_vaddr;
 		pg->pg_paddr = 0;
+		pg->pg_inmem = true;
 
 		/*if(strt->pg_paddr == 0){
 		}else {*/
@@ -292,6 +293,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		pg->pg_next = NULL;
 		pg->pg_vaddr = va;
 		pg->pg_paddr = 0;	
+		pg->pg_inmem = true;
 		
 		if(as->as_pgtable == NULL){
 			as->as_pgtable = pg;
