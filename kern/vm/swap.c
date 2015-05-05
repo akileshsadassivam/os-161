@@ -29,7 +29,8 @@ swapspace_init(){
 		sw_space[itr].sw_vaddr = 0;
 	}
 	
-	int ret = vfs_open((char*)"lhd0raw:", O_RDWR, 0664, &sw_vn);
+	//int ret = vfs_open((char*)"lhd0raw:", O_RDWR, 0, &sw_vn);
+	int ret = vfs_open((char*)"swapfile", O_RDWR|O_CREAT|O_TRUNC, 0, &sw_vn);
 	KASSERT(ret == 0);
 
 }
@@ -49,7 +50,8 @@ read_page(void* kbuf, off_t sw_offset){
 }
 
 int
-write_page(void* kbuf, off_t* newoffset){
+write_page(void* kbuf, off_t* newoffset, int index){
+	(void)index;
 	struct iovec iovectr;
 	struct uio uiovar;
 	struct stat st;
@@ -58,10 +60,23 @@ write_page(void* kbuf, off_t* newoffset){
 		return 1;	// not sure of the error, but an error code shud be returned
 	}
 
+	spinlock_release(&cm_lock);
 	VOP_STAT(sw_vn,&st);	// gets the size of the file, so that we can append data at the end
+	spinlock_acquire(&cm_lock);
 	off_t offset = st.st_size;
+	/*off_t offset;
+
+	if(index == 0){
+		offset = PAGE_SIZE;
+	}else{
+		offset = sw_space[index-1].sw_offset + PAGE_SIZE;
+	}*/
+
 	uio_kinit(&iovectr, &uiovar, kbuf, PAGE_SIZE, offset, UIO_WRITE);
+
+	spinlock_release(&cm_lock);
 	int ret = VOP_WRITE(sw_vn,&uiovar);
+	spinlock_acquire(&cm_lock);
 
 	if(ret){
 		return 1;
@@ -101,7 +116,7 @@ swap_in(struct addrspace* as, vaddr_t va, void* kbuf){
 
 int
 swap_out(struct addrspace* as, vaddr_t va, void* kbuf){
-	
+	(void)kbuf;	
 	int itr = 0;
 
 	for(; itr < MAX_VAL; itr++){
@@ -109,7 +124,7 @@ swap_out(struct addrspace* as, vaddr_t va, void* kbuf){
 			sw_space[itr].sw_addrspace = as;
 			sw_space[itr].sw_vaddr = va;
 			
-			if(write_page(kbuf, &sw_space[itr].sw_offset)){
+			if(write_page((void*)va, &sw_space[itr].sw_offset, itr)){
 				return 1;
 			}
 			

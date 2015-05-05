@@ -20,7 +20,7 @@ int
 read_page(void* kbuf, off_t sw_offset);
 
 int
-write_page(void* kbuf, off_t* newoffset);
+write_page(void* kbuf, off_t* newoffset, int index);
 
 
 int

@@ -173,6 +173,7 @@ delete_coremap(struct addrspace* as){
 void
 page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 {
+	(void)forstack;
 	bool ispagefree = false;
 	unsigned int page;
 	spinlock_acquire(&cm_lock);
@@ -195,7 +196,7 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
-	if(!forstack){
+	//if(!forstack){
 		while(temp != NULL && temp->pg_vaddr != va){
 			temp = (pagetable*) temp->pg_next;
 		}
@@ -206,9 +207,9 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		}
 		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
 		temp->pg_inmem = true;
-	}else{
+	//}else{
 		//as->as_stop = firstaddr + (page * PAGE_SIZE);
-	}
+	//}
 
 	alloc->cm_addrspace = as;
 	alloc->cm_vaddr = va;
@@ -301,7 +302,7 @@ make_page_avail(coremap** temp, int npages)
         unsigned int victimpage = 0;
 
         for(unsigned int page = 0; page < totalpagecnt; page++){
-        	if(/*(cm_entry + page)->cm_addrspace == curthread->t_addrspace &&*/ (cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
+        	if((cm_entry + page)->cm_addrspace == curthread->t_addrspace && (cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
                         oldertimestamp = (cm_entry + page)->cm_timestamp;
                         victimpage = page;
                 }
@@ -314,7 +315,7 @@ make_page_avail(coremap** temp, int npages)
 	if((cm_entry + victimpage)->cm_addrspace != NULL){
 		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
 		while(pg != NULL){
-			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
+			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr && pg->pg_inmem == true){
 				swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
 				pg->pg_paddr = 0;
 				pg->pg_inmem = false;
@@ -347,7 +348,7 @@ free_kpages(vaddr_t addr)
 				coremap* temp = cm_entry;
 
 				for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
-					if((temp + page + npages)->cm_addrspace != NULL){
+					/*if((temp + page + npages)->cm_addrspace != NULL){
 						pagetable* table = (temp + page + npages)->cm_addrspace->as_pgtable;
 						pagetable* prev = NULL;
 						
@@ -369,7 +370,7 @@ free_kpages(vaddr_t addr)
 
 						(temp + page + npages)->cm_addrspace = NULL;	
 						//vm_tlbshootdown_all();
-					}
+					}*/
 					(temp + page + npages)->cm_state = FREE;
 				}
 				break;
