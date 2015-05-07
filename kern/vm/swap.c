@@ -42,7 +42,10 @@ read_page(void* kbuf, off_t sw_offset){
 
 	uio_kinit(&iovectr, &uiovar, (void*)PADDR_TO_KVADDR(kbuf), PAGE_SIZE, sw_offset, UIO_READ);
 
+	spinlock_release(&cm_lock);
 	int ret = VOP_READ(sw_vn, &uiovar);
+	spinlock_acquire(&cm_lock);
+
 	if(ret){
 		return ret;
 	}
@@ -68,9 +71,9 @@ write_page(void* kbuf, off_t* newoffset, int index){
 	off_t offset;
 
 	if(index == 0){
-		offset = PAGE_SIZE;
+		offset = 0;
 	}else{
-		offset = sw_space[index-1].sw_offset + PAGE_SIZE;
+		offset = index * PAGE_SIZE;
 	}
 
 	uio_kinit(&iovectr, &uiovar, (void*)PADDR_TO_KVADDR(kbuf), PAGE_SIZE, offset, UIO_WRITE);
@@ -107,6 +110,10 @@ swap_in(struct addrspace* as, vaddr_t va, void* kbuf){
 		spinlock_release(&cm_lock);
 		return 1;
 	}else{
+		sw_space[itr].sw_addrspace = NULL;
+		sw_space[itr].sw_vaddr = 0;
+		sw_space[itr].sw_offset = 0;
+
 		spinlock_release(&cm_lock);
 		return 0;
 	}

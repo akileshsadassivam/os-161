@@ -49,7 +49,8 @@ typedef enum{
 	FREE,
 	FIXED,
 	DIRTY,
-	CLEAN
+	CLEAN,
+	SWAPPING
 }page_state;
 
 typedef struct{
@@ -68,10 +69,11 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(int npages);
+vaddr_t page_nalloc(int npages);
 void free_kpages(vaddr_t addr);
 
 void page_alloc(struct addrspace*, vaddr_t, bool);
-vaddr_t page_nalloc(int npages);
+void page_free(vaddr_t);
 /*Evict pages based on FIFO algorithm*/
 unsigned int make_page_avail(coremap**, int npages);
 

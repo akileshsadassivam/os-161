@@ -204,7 +204,6 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		return;		//Error: vaddr not found
 	}
 	temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
-	//temp->pg_inmem = true;
 
 	alloc->cm_addrspace = as;
 	alloc->cm_vaddr = va;
@@ -258,11 +257,13 @@ page_nalloc(int npages)
 		gettime(&secs, &(allock+page)->cm_timestamp);
 	}
 	
+	allock->cm_addrspace = NULL;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
 }
 
+/*Pick the oldest page available in the coremap so as to swap out*/
 unsigned int
 make_page_avail(coremap** temp, int npages)
 {
@@ -270,43 +271,41 @@ make_page_avail(coremap** temp, int npages)
         unsigned int victimpage = 0;
 
         for(unsigned int page = 0; page < totalpagecnt; page++){
-        	if(/*(cm_entry + page)->cm_addrspace == curthread->t_addrspace &&*/
-			 (cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
+        	if((cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_state != SWAPPING && 
+			(cm_entry + page)->cm_timestamp < oldertimestamp){
                         oldertimestamp = (cm_entry + page)->cm_timestamp;
                         victimpage = page;
                 }
         }
 
 	KASSERT(victimpage != 0);
-	KASSERT((cm_entry + victimpage)->cm_state != FIXED);
 	KASSERT((cm_entry + victimpage)->cm_addrspace != NULL);
 
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
+	(cm_entry + victimpage)->cm_state = SWAPPING;
 
-	vm_tlbshootdown_all();
-	/*struct tlbshootdown tlb;
+	struct tlbshootdown tlb;
 	tlb.ts_addrspace = (cm_entry + victimpage)->cm_addrspace;
 	tlb.ts_vaddr = (cm_entry + victimpage)->cm_vaddr;
-	ipi_tlbshootdown(curthread->t_cpu,&tlb);
-	*/
-	if((cm_entry + victimpage)->cm_addrspace != NULL){
-		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
-		while(pg != NULL){
-			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
-				swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
-				
-				spinlock_release(&cm_lock);
-				bzero((int*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
-				spinlock_acquire(&cm_lock);
+	ipi_tlbshootdown(curthread->t_cpu, &tlb);
+	
+	pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
+	while(pg != NULL){
+		if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
+			swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
+			(cm_entry + victimpage)->cm_state = CLEAN;
+			
+			//spinlock_release(&cm_lock);
+			bzero((int*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
+			//spinlock_acquire(&cm_lock);
 
-				pg->pg_paddr = 0;
-				pg->pg_inmem = false;
-				break;
-			}
-
-			pg = (pagetable*) pg->pg_next;
+			pg->pg_paddr = 0;
+			pg->pg_inmem = false;
+			break;
 		}
+
+		pg = (pagetable*) pg->pg_next;
 	}
 
 	if(npages > 1){
@@ -317,6 +316,31 @@ make_page_avail(coremap** temp, int npages)
 	return victimpage;
 }
 
+/*Free the page allocate for user process*/
+void
+page_free(vaddr_t addr){
+	spinlock_acquire(&cm_lock);
+
+	for(unsigned int page = 0; page < totalpagecnt; page++){
+		if((cm_entry + page)->cm_vaddr == addr && (cm_entry + page)->cm_addrspace == curthread->t_addrspace){
+			coremap* temp = cm_entry;
+
+			for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
+				(temp + page + npages)->cm_state = FREE;
+
+				struct tlbshootdown tlb;
+			        tlb.ts_addrspace = (temp + page + npages)->cm_addrspace;
+			        tlb.ts_vaddr = (temp + page + npages)->cm_vaddr;
+			        ipi_tlbshootdown(curthread->t_cpu, &tlb);
+			}
+			break;
+		}
+	}
+
+	spinlock_release(&cm_lock);
+}
+
+/*Free the page allocated for kernel heap*/
 void 
 free_kpages(vaddr_t addr)
 {
@@ -324,12 +348,16 @@ free_kpages(vaddr_t addr)
 	
 	for(unsigned int page = 0; page < totalpagecnt; page++){
 		if((cm_entry + page)->cm_vaddr == addr){
-			if((cm_entry + page)->cm_addrspace == curthread->t_addrspace ||
-				(cm_entry + page)->cm_addrspace == NULL){
+			if((cm_entry + page)->cm_addrspace == NULL){
 				coremap* temp = cm_entry;
 
 				for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
 					(temp + page + npages)->cm_state = FREE;
+
+					struct tlbshootdown tlb;
+				        tlb.ts_addrspace = (temp + page + npages)->cm_addrspace;
+				        tlb.ts_vaddr = (temp + page + npages)->cm_vaddr;
+				        ipi_tlbshootdown(curthread->t_cpu, &tlb);
 				}
 				break;
 			}
@@ -353,10 +381,7 @@ vm_tlbshootdown_all(void)
 void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
-	//(void)ts;
 	uint32_t ehi, elo;
-	//panic("dumbvm tried to do tlb shootdown?!\n");
-	//vm_tlbshootdown_all();
 
 	int spl = splhigh();
 

@@ -156,7 +156,19 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	                        page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
 				memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
 			}
-               	}
+               	}else{
+			if(strt->pg_inmem == false){
+				int npages = get_page_count(strt->pg_vaddr);
+                        	for(int page = 0; page < npages; page++){
+					page_alloc(old, strt->pg_vaddr + (page * PAGE_SIZE), false);
+                                        swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
+                                        strt->pg_inmem = true;
+
+					page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
+	                                memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
+				}
+			}
+		}
 
 		strt = (pagetable*)strt->pg_next;
 		pg = (pagetable*)pg->pg_next;
@@ -185,6 +197,7 @@ as_destroy(struct addrspace *as)
                 pg = (pagetable*) pg->pg_next;
 
 		if(pg_prev->pg_inmem == true){
+			//page_free(pg_prev->pg_vaddr);
                 	kfree(pg_prev);
 		}
         }
