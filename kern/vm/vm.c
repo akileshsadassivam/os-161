@@ -29,6 +29,7 @@
 
 #include <types.h>
 #include <kern/errno.h>
+#include <cpu.h>
 #include <lib.h>
 #include <spl.h>
 #include <spinlock.h>
@@ -59,7 +60,6 @@ vm_bootstrap(void)
 {
 	paddr_t lastaddr, freeaddr, buf;
 
-	//cm_lock = lock_create("cm_lock");
 	spinlock_init(&cm_lock);
 	ram_getsize(&firstaddr, &lastaddr);
 	totalpagecnt = (unsigned int) (lastaddr - firstaddr) / PAGE_SIZE;
@@ -162,7 +162,6 @@ delete_coremap(struct addrspace* as){
 			(temp + page)->cm_state = FREE;
 
 			(temp + page)->cm_vaddr = PADDR_TO_KVADDR(buf);
-			//bzero((int*)(temp + page)->cm_vaddr, PAGE_SIZE);
 		}
 		
 		buf += PAGE_SIZE;
@@ -196,20 +195,16 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 	time_t secs;
 	pagetable* temp = as->as_pgtable;
 
-	//if(!forstack){
-		while(temp != NULL && temp->pg_vaddr != va){
-			temp = (pagetable*) temp->pg_next;
-		}
+	while(temp != NULL && temp->pg_vaddr != va){
+		temp = (pagetable*) temp->pg_next;
+	}
 	
-		if(temp == NULL){
-			spinlock_release(&cm_lock);
-			return;		//Error: vaddr not found
-		}
-		temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
-		temp->pg_inmem = true;
-	//}else{
-		//as->as_stop = firstaddr + (page * PAGE_SIZE);
-	//}
+	if(temp == NULL){
+		spinlock_release(&cm_lock);
+		return;		//Error: vaddr not found
+	}
+	temp->pg_paddr = firstaddr + (page * PAGE_SIZE);
+	//temp->pg_inmem = true;
 
 	alloc->cm_addrspace = as;
 	alloc->cm_vaddr = va;
@@ -251,45 +246,18 @@ page_nalloc(int npages)
 		start = make_page_avail(&allock, npages);
 	}else {
 		allock = cm_entry + start;
+		bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
 	}
 
-	bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
 	vaddr_t result = allock->cm_vaddr;
-
-	/*pagetable* table;
-	if(curthread->t_addrspace != NULL){
-		table = curthread->t_addrspace->as_pgtable;
-	}*/
 
 	for(int page = 0; page < npages; page++){
 		(allock+page)->cm_state = FIXED;
 
 		time_t secs;
 		gettime(&secs, &(allock+page)->cm_timestamp);
-
-	/*	if(curthread->t_addrspace != NULL){
-		pagetable* prev = NULL;
-		while(table != NULL){
-			prev = table;
-			table = (pagetable*) table->pg_next;
-		}
-
-		table = kmalloc(sizeof(pagetable));
-		
-		if(table == NULL){
-			spinlock_release(&cm_lock);
-			return 0;
-		}
-
-		table->pg_vaddr = allock->cm_vaddr + (page * PAGE_SIZE);
-		table->pg_paddr = firstaddr + ((start + page) * PAGE_SIZE);
-		table->pg_next = NULL;
-
-		prev->pg_next = (struct pagetable*) table;
-		}*/
 	}
 	
-	//allock->cm_addrspace = curthread->t_addrspace;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
@@ -302,21 +270,36 @@ make_page_avail(coremap** temp, int npages)
         unsigned int victimpage = 0;
 
         for(unsigned int page = 0; page < totalpagecnt; page++){
-        	if((cm_entry + page)->cm_addrspace == curthread->t_addrspace && (cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
+        	if(/*(cm_entry + page)->cm_addrspace == curthread->t_addrspace &&*/
+			 (cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_timestamp < oldertimestamp){
                         oldertimestamp = (cm_entry + page)->cm_timestamp;
                         victimpage = page;
                 }
         }
 
 	KASSERT(victimpage != 0);
+	KASSERT((cm_entry + victimpage)->cm_state != FIXED);
+	KASSERT((cm_entry + victimpage)->cm_addrspace != NULL);
+
 	//Inform the caller about the index of coremap that is to be changed
         *temp = cm_entry + victimpage;
 
+	vm_tlbshootdown_all();
+	/*struct tlbshootdown tlb;
+	tlb.ts_addrspace = (cm_entry + victimpage)->cm_addrspace;
+	tlb.ts_vaddr = (cm_entry + victimpage)->cm_vaddr;
+	ipi_tlbshootdown(curthread->t_cpu,&tlb);
+	*/
 	if((cm_entry + victimpage)->cm_addrspace != NULL){
 		pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
 		while(pg != NULL){
-			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr && pg->pg_inmem == true){
+			if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
 				swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
+				
+				spinlock_release(&cm_lock);
+				bzero((int*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
+				spinlock_acquire(&cm_lock);
+
 				pg->pg_paddr = 0;
 				pg->pg_inmem = false;
 				break;
@@ -326,7 +309,6 @@ make_page_avail(coremap** temp, int npages)
 		}
 	}
 
-	vm_tlbshootdown_all();
 	if(npages > 1){
 		//TODO: logic for swapping	
 		panic("npages>1");
@@ -338,7 +320,6 @@ make_page_avail(coremap** temp, int npages)
 void 
 free_kpages(vaddr_t addr)
 {
-	//lock_acquire(cm_lock);
 	spinlock_acquire(&cm_lock);
 	
 	for(unsigned int page = 0; page < totalpagecnt; page++){
@@ -348,45 +329,18 @@ free_kpages(vaddr_t addr)
 				coremap* temp = cm_entry;
 
 				for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
-					/*if((temp + page + npages)->cm_addrspace != NULL){
-						pagetable* table = (temp + page + npages)->cm_addrspace->as_pgtable;
-						pagetable* prev = NULL;
-						
-						while(table != NULL){
-							if(table->pg_vaddr == addr){
-								if(prev != NULL){
-									prev->pg_next = table->pg_next;
-								}else{
-									prev = (pagetable*) table->pg_next;
-								}
-								kfree(table);
-								break;
-								
-							}else{							
-								prev = table;
-								table = (pagetable*)table->pg_next;
-							}
-						}
-
-						(temp + page + npages)->cm_addrspace = NULL;	
-						//vm_tlbshootdown_all();
-					}*/
 					(temp + page + npages)->cm_state = FREE;
 				}
 				break;
 			}
 		}
 	}
-	//lock_release(cm_lock);
 	spinlock_release(&cm_lock);
 }
 
 void
 vm_tlbshootdown_all(void)
 {
-	//panic("dumbvm tried to do tlb shootdown?!\n");
-
-//	spinlock_acquire(&cm_lock);
 	int spl = splhigh();
 
 	for(int cnt = 0; cnt < NUM_TLB; cnt++){
@@ -394,14 +348,28 @@ vm_tlbshootdown_all(void)
 	}
 
 	splx(spl);
-//	spinlock_release(&cm_lock);
 }
 
 void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
-	(void)ts;
-	panic("dumbvm tried to do tlb shootdown?!\n");
+	//(void)ts;
+	uint32_t ehi, elo;
+	//panic("dumbvm tried to do tlb shootdown?!\n");
+	//vm_tlbshootdown_all();
+
+	int spl = splhigh();
+
+	int index = tlb_probe(ts->ts_vaddr, 0);
+        tlb_read(&ehi, &elo, index);
+
+	if(index != -1){
+                if(elo & TLBLO_VALID){
+			tlb_write(TLBHI_INVALID(index), TLBLO_INVALID(), index);
+                }
+	}
+
+	splx(spl);
 }
 
 int
@@ -429,16 +397,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			
 			while(table != NULL){
 				if(table->pg_vaddr == faultaddress){
-					if(table->pg_paddr == 0 ){
+					if(table->pg_paddr == 0){
 						page_alloc(curthread->t_addrspace, faultaddress, false);
 						if(table->pg_inmem == false){
 							swap_in(curthread->t_addrspace, faultaddress, (void*)table->pg_paddr);
 							table->pg_inmem = true;
 						}
-						//if(curthread->t_addrspace->as_parent != NULL){
-						//	pagetable* pg = curthread->t_addrspace->as_parent->as_pgtable;
-						//	memmove((void*)PADDR_TO_KVADDR(table->pg_paddr), (void*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
-						//}
 					}
 					paddr = table->pg_paddr;
 					invalidvaddr = false;
@@ -446,7 +410,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 				}
 				table = (pagetable*) table->pg_next;
 			}
-			//}
 
 			if(invalidvaddr){
 				return EFAULT;
@@ -459,99 +422,23 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	spl = splhigh();
 
-        ehi = faultaddress;
-        elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-        tlb_random(ehi, elo);
+	int index = tlb_probe(faultaddress, 0);
+	tlb_read(&ehi, &elo, index);
+
+	if(index != -1){
+		if(elo & TLBLO_VALID){
+        		ehi = faultaddress;
+        		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+        		tlb_write(ehi, elo, index);
+		}else{
+			return EFAULT;
+		}
+	}else{
+        	ehi = faultaddress;
+        	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		tlb_random(ehi, elo);
+	}
 
         splx(spl);
 	return 0;
-
-	/*vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
-	paddr_t paddr;
-	int i;
-	uint32_t ehi, elo;
-	struct addrspace *as;
-	int spl;
-
-	faultaddress &= PAGE_FRAME;
-
-	DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
-
-	switch (faulttype) {
-	    case VM_FAULT_READONLY:
-		* We always create pages read-write, so we can't get this 
-		panic("dumbvm: got VM_FAULT_READONLY\n");
-	    case VM_FAULT_READ:
-	    case VM_FAULT_WRITE:
-		break;
-	    default:
-		return EINVAL;
-	}
-
-	as = curthread->t_addrspace;
-	if (as == NULL) {
-		*
-		 * No address space set up. This is probably a kernel
-		 * fault early in boot. Return EFAULT so as to panic
-		 * instead of getting into an infinite faulting loop.
-		 *
-		return EFAULT;
-	}
-
-	* Assert that the address space has been set up properly. *
-	KASSERT(as->as_vbase1 != 0);
-	KASSERT(as->as_pbase1 != 0);
-	KASSERT(as->as_npages1 != 0);
-	KASSERT(as->as_vbase2 != 0);
-	KASSERT(as->as_pbase2 != 0);
-	KASSERT(as->as_npages2 != 0);
-	KASSERT(as->as_stackpbase != 0);
-	KASSERT((as->as_vbase1 & PAGE_FRAME) == as->as_vbase1);
-	KASSERT((as->as_pbase1 & PAGE_FRAME) == as->as_pbase1);
-	KASSERT((as->as_vbase2 & PAGE_FRAME) == as->as_vbase2);
-	KASSERT((as->as_pbase2 & PAGE_FRAME) == as->as_pbase2);
-	KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
-
-	vbase1 = as->as_vbase1;
-	vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
-	vbase2 = as->as_vbase2;
-	vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
-	stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
-	stacktop = USERSTACK;
-
-	if (faultaddress >= vbase1 && faultaddress < vtop1) {
-		paddr = (faultaddress - vbase1) + as->as_pbase1;
-	}
-	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
-		paddr = (faultaddress - vbase2) + as->as_pbase2;
-	}
-	else if (faultaddress >= stackbase && faultaddress < stacktop) {
-		paddr = (faultaddress - stackbase) + as->as_stackpbase;
-	}
-	else {
-		return EFAULT;
-	}
-
-	* make sure it's page-aligned *
-	KASSERT((paddr & PAGE_FRAME) == paddr);
-
-	* Disable interrupts on this CPU while frobbing the TLB. *
-	spl = splhigh();
-
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_read(&ehi, &elo, i);
-		if (elo & TLBLO_VALID) {
-			continue;
-		}
-		ehi = faultaddress;
-		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
-		tlb_write(ehi, elo, i);
-		splx(spl);
-		return 0;
-	}
-
-	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
-	splx(spl);
-	return EFAULT;*/
 }

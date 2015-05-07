@@ -32,6 +32,7 @@
 #include <lib.h>
 #include <clock.h>
 #include <synch.h>
+#include <swap.h>
 #include <addrspace.h>
 
 /*
@@ -41,8 +42,6 @@
  */
 
 t_perm *start,*q;
-//extern coremap* cm_entry;
-//struct spinlock cm_lock;
 
 struct addrspace *
 as_create(void)
@@ -98,15 +97,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		pg->pg_paddr = 0;
 		pg->pg_inmem = true;
 
-		/*if(strt->pg_paddr == 0){
-		}else {*/
-			/*int npages = get_page_count(strt->pg_vaddr);
-			for(int page = 0; page < npages; page++){
-				page_alloc_copy(pg, pg->pg_vaddr + (page * PAGE_SIZE));
-				memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
-			}*/
-		//}
-
 		pg->pg_next = NULL;
 		strt = (pagetable*)strt->pg_next;
 
@@ -149,30 +139,21 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	newas->as_hpstart = old->as_hpstart;
 	newas->as_hpend = old->as_hpend;
 	
-	//Update the coremap with the new addrspace
-	//coremap* temp = cm_entry;
 	pg = newas->as_pgtable;
 	strt = old->as_pgtable;
-	//int totalpagecnt = get_total_page_count();
 
 	while(pg != NULL){
-		/*int page = 0;
-
-		while(page < totalpagecnt){
-			if((temp + page)->cm_vaddr == pg->pg_vaddr){
-				if((temp + page)->cm_addrspace == NULL){
-					(temp + page)->cm_addrspace = newas;
-					break;
-				}
-			}
-			page++;
-		}*/
 
 		if(strt->pg_paddr != 0){
 			int npages = get_page_count(strt->pg_vaddr);
                 	for(int page = 0; page < npages; page++){
+				if(strt->pg_inmem == false){
+					page_alloc(old, strt->pg_vaddr + (page * PAGE_SIZE), false);
+					swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
+					strt->pg_inmem = true;
+				}
+
 	                        page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
-        	                //memmove((void*)pg->pg_vaddr + (page * PAGE_SIZE), (void*)strt->pg_vaddr + (page * PAGE_SIZE), PAGE_SIZE);
 				memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
 			}
                	}
@@ -202,7 +183,10 @@ as_destroy(struct addrspace *as)
         while(pg != NULL){
                 pg_prev = pg;
                 pg = (pagetable*) pg->pg_next;
-                kfree(pg_prev);
+
+		if(pg_prev->pg_inmem == true){
+                	kfree(pg_prev);
+		}
         }
         
         segment *sg_prev, *sg;
@@ -216,7 +200,6 @@ as_destroy(struct addrspace *as)
 	
 	delete_coremap(as);
 	kfree(as);
-	//vm_tlbshootdown_all();
 }
 
 void

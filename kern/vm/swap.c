@@ -29,10 +29,9 @@ swapspace_init(){
 		sw_space[itr].sw_vaddr = 0;
 	}
 	
-	//int ret = vfs_open((char*)"lhd0raw:", O_RDWR, 0, &sw_vn);
-	int ret = vfs_open((char*)"swapfile", O_RDWR|O_CREAT|O_TRUNC, 0, &sw_vn);
+	int ret = vfs_open((char*)"lhd0raw:", O_RDWR, 0, &sw_vn);
+	//int ret = vfs_open((char*)"swapfile", O_RDWR|O_CREAT|O_TRUNC, 0, &sw_vn);
 	KASSERT(ret == 0);
-
 }
 
 
@@ -40,12 +39,14 @@ int
 read_page(void* kbuf, off_t sw_offset){
 	struct iovec iovectr;
 	struct uio uiovar;
-	uio_kinit(&iovectr, &uiovar, kbuf, PAGE_SIZE, sw_offset, UIO_READ);
+
+	uio_kinit(&iovectr, &uiovar, (void*)PADDR_TO_KVADDR(kbuf), PAGE_SIZE, sw_offset, UIO_READ);
+
 	int ret = VOP_READ(sw_vn, &uiovar);
 	if(ret){
 		return ret;
 	}
-//	*sw_offset = uio.uio_offset;
+
 	return 0;
 }
 
@@ -54,25 +55,25 @@ write_page(void* kbuf, off_t* newoffset, int index){
 	(void)index;
 	struct iovec iovectr;
 	struct uio uiovar;
-	struct stat st;
+	//struct stat st;
 
 	if(sw_vn == NULL){
 		return 1;	// not sure of the error, but an error code shud be returned
 	}
 
-	spinlock_release(&cm_lock);
-	VOP_STAT(sw_vn,&st);	// gets the size of the file, so that we can append data at the end
-	spinlock_acquire(&cm_lock);
-	off_t offset = st.st_size;
-	/*off_t offset;
+	//spinlock_release(&cm_lock);
+	//VOP_STAT(sw_vn,&st);	// gets the size of the file, so that we can append data at the end
+	//spinlock_acquire(&cm_lock);
+	//off_t offset = st.st_size;
+	off_t offset;
 
 	if(index == 0){
 		offset = PAGE_SIZE;
 	}else{
 		offset = sw_space[index-1].sw_offset + PAGE_SIZE;
-	}*/
+	}
 
-	uio_kinit(&iovectr, &uiovar, kbuf, PAGE_SIZE, offset, UIO_WRITE);
+	uio_kinit(&iovectr, &uiovar, (void*)PADDR_TO_KVADDR(kbuf), PAGE_SIZE, offset, UIO_WRITE);
 
 	spinlock_release(&cm_lock);
 	int ret = VOP_WRITE(sw_vn,&uiovar);
@@ -83,20 +84,18 @@ write_page(void* kbuf, off_t* newoffset, int index){
 	}
 
 	*newoffset = offset;
-	
 	return 0;
 }
 
-
-
 int
 swap_in(struct addrspace* as, vaddr_t va, void* kbuf){
+	(void)kbuf;
 	int itr =0;
 	
 	spinlock_acquire(&cm_lock);
 	for(; itr < MAX_VAL; itr++){
                 if(sw_space[itr].sw_addrspace == as && sw_space[itr].sw_vaddr == va){
-			if(read_page(kbuf,sw_space[itr].sw_offset)){
+			if(read_page(kbuf, sw_space[itr].sw_offset)){
 				spinlock_release(&cm_lock);
 				return 1;
 			}
@@ -124,7 +123,7 @@ swap_out(struct addrspace* as, vaddr_t va, void* kbuf){
 			sw_space[itr].sw_addrspace = as;
 			sw_space[itr].sw_vaddr = va;
 			
-			if(write_page((void*)va, &sw_space[itr].sw_offset, itr)){
+			if(write_page(kbuf, &sw_space[itr].sw_offset, itr)){
 				return 1;
 			}
 			
