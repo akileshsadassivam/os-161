@@ -95,11 +95,11 @@ swap_in(struct addrspace* as, vaddr_t va, void* kbuf){
 	(void)kbuf;
 	int itr =0;
 	
-	spinlock_acquire(&cm_lock);
+	//spinlock_acquire(&cm_lock);
 	for(; itr < MAX_VAL; itr++){
                 if(sw_space[itr].sw_addrspace == as && sw_space[itr].sw_vaddr == va){
 			if(read_page(kbuf, sw_space[itr].sw_offset)){
-				spinlock_release(&cm_lock);
+				//spinlock_release(&cm_lock);
 				return 1;
 			}
                         break;
@@ -107,14 +107,14 @@ swap_in(struct addrspace* as, vaddr_t va, void* kbuf){
         }
 	
 	if(itr == MAX_VAL){
-		spinlock_release(&cm_lock);
+		//spinlock_release(&cm_lock);
 		return 1;
 	}else{
 		sw_space[itr].sw_addrspace = NULL;
 		sw_space[itr].sw_vaddr = 0;
 		sw_space[itr].sw_offset = 0;
 
-		spinlock_release(&cm_lock);
+		//spinlock_release(&cm_lock);
 		return 0;
 	}
 }

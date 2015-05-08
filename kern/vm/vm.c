@@ -257,7 +257,7 @@ page_nalloc(int npages)
 		gettime(&secs, &(allock+page)->cm_timestamp);
 	}
 	
-	allock->cm_addrspace = NULL;
+	//allock->cm_addrspace = NULL;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
@@ -411,6 +411,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return EFAULT;
 	}
 
+	spinlock_acquire(&cm_lock);
 	switch (faulttype) {
 		case VM_FAULT_READONLY:
 			panic("Read only");
@@ -423,7 +424,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			while(table != NULL){
 				if(table->pg_vaddr == faultaddress){
 					if(table->pg_paddr == 0){
+						spinlock_release(&cm_lock);
 						page_alloc(curthread->t_addrspace, faultaddress, false);
+						spinlock_acquire(&cm_lock);
+
 						if(table->pg_inmem == false){
 							swap_in(curthread->t_addrspace, faultaddress, (void*)table->pg_paddr);
 							table->pg_inmem = true;
@@ -437,14 +441,17 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			}
 
 			if(invalidvaddr){
+				spinlock_release(&cm_lock);
 				return EFAULT;
 			}
 		}
 		break;
 		default:
+			spinlock_release(&cm_lock);
 			return EFAULT;
 	}
 
+	spinlock_release(&cm_lock);
 	spl = splhigh();
 
 	int index = tlb_probe(faultaddress, 0);
