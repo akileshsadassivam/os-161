@@ -54,6 +54,7 @@ bool bootstrapped = false;
 unsigned int totalpagecnt;
 struct spinlock cm_lock;// = SPINLOCK_INITIALIZER;
 paddr_t firstaddr;
+uint32_t counter;
 
 void
 vm_bootstrap(void)
@@ -72,10 +73,11 @@ vm_bootstrap(void)
 		(cm_entry+page)->cm_addrspace = NULL;
 		(cm_entry+page)->cm_vaddr = PADDR_TO_KVADDR(buf);
 		(cm_entry+page)->cm_npages = 0;
-		(cm_entry+page)->cm_timestamp = 4294967295; 	
+		(cm_entry+page)->cm_timestamp = 0; 	
 
 		if(buf < freeaddr){
 			(cm_entry+page)->cm_state = FIXED;
+			counter++;
 		}else {
 			(cm_entry+page)->cm_state = FREE;
 		}
@@ -189,10 +191,11 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		page = make_page_avail(&alloc, 1);
 	}else{
 		alloc = cm_entry + page;
-		bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
+		//bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
+		bzero((int*)PADDR_TO_KVADDR(firstaddr + (page * PAGE_SIZE)), PAGE_SIZE);
 	}
 
-	time_t secs;
+	//time_t secs;
 	pagetable* temp = as->as_pgtable;
 
 	while(temp != NULL && temp->pg_vaddr != va){
@@ -207,7 +210,8 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 
 	alloc->cm_addrspace = as;
 	alloc->cm_vaddr = va;
-	gettime(&secs, &alloc->cm_timestamp);
+	//gettime(&secs, &alloc->cm_timestamp);
+	alloc->cm_timestamp = ++counter;
 	alloc->cm_state = DIRTY;
 	alloc->cm_npages = 1;
 
@@ -245,7 +249,8 @@ page_nalloc(int npages)
 		start = make_page_avail(&allock, npages);
 	}else {
 		allock = cm_entry + start;
-		bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
+		//bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
+		bzero((int*)PADDR_TO_KVADDR(firstaddr + (start * PAGE_SIZE)), npages * PAGE_SIZE);
 	}
 
 	vaddr_t result = allock->cm_vaddr;
@@ -253,8 +258,9 @@ page_nalloc(int npages)
 	for(int page = 0; page < npages; page++){
 		(allock+page)->cm_state = FIXED;
 
-		time_t secs;
-		gettime(&secs, &(allock+page)->cm_timestamp);
+		//time_t secs;
+		//gettime(&secs, &(allock+page)->cm_timestamp);
+		(allock+page)->cm_timestamp = ++counter;
 	}
 	
 	//allock->cm_addrspace = NULL;
@@ -267,14 +273,15 @@ page_nalloc(int npages)
 unsigned int
 make_page_avail(coremap** temp, int npages)
 {
-	uint32_t oldertimestamp = 4294967295;
+	uint64_t oldertimestamp = 0;
         unsigned int victimpage = 0;
 
         for(unsigned int page = 0; page < totalpagecnt; page++){
-        	if((cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_state != SWAPPING && 
-			(cm_entry + page)->cm_timestamp < oldertimestamp){
-                        oldertimestamp = (cm_entry + page)->cm_timestamp;
-                        victimpage = page;
+        	if((cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_state != SWAPPING){ 
+			if((oldertimestamp == 0) || (cm_entry + page)->cm_timestamp < oldertimestamp){
+				oldertimestamp = (cm_entry + page)->cm_timestamp;
+	       	                victimpage = page;
+			}
                 }
         }
 
@@ -296,9 +303,7 @@ make_page_avail(coremap** temp, int npages)
 			swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
 			(cm_entry + victimpage)->cm_state = CLEAN;
 			
-			//spinlock_release(&cm_lock);
 			bzero((int*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
-			//spinlock_acquire(&cm_lock);
 
 			pg->pg_paddr = 0;
 			pg->pg_inmem = false;
@@ -327,6 +332,8 @@ page_free(vaddr_t addr){
 
 			for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
 				(temp + page + npages)->cm_state = FREE;
+				//(temp + page + npages)->cm_addrspace = NULL;
+				//(temp + page + npages)->cm_vaddr = 0;
 
 				struct tlbshootdown tlb;
 			        tlb.ts_addrspace = (temp + page + npages)->cm_addrspace;

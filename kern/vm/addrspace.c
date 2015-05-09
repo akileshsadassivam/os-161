@@ -147,26 +147,23 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		if(strt->pg_paddr != 0){
 			int npages = get_page_count(strt->pg_vaddr);
                 	for(int page = 0; page < npages; page++){
-				if(strt->pg_inmem == false){
+				/*if(strt->pg_inmem == false){
 					page_alloc(old, strt->pg_vaddr + (page * PAGE_SIZE), false);
 					swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
 					strt->pg_inmem = true;
-				}
+				}*/
 
 	                        page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
 				memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
 			}
                	}else{
 			if(strt->pg_inmem == false){
-				int npages = get_page_count(strt->pg_vaddr);
-                        	for(int page = 0; page < npages; page++){
-					page_alloc(old, strt->pg_vaddr + (page * PAGE_SIZE), false);
-                                        swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
-                                        strt->pg_inmem = true;
+				page_alloc(old, strt->pg_vaddr, false);
+                                swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
+                                strt->pg_inmem = true;
 
-					page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
-	                                memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
-				}
+				page_alloc(newas, pg->pg_vaddr, false);
+	                	memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
 			}
 		}
 
@@ -189,6 +186,7 @@ as_destroy(struct addrspace *as)
 	}
 
 
+	delete_coremap(as);
 	pagetable *pg_prev,*pg;
         pg=as->as_pgtable;
         
@@ -197,7 +195,9 @@ as_destroy(struct addrspace *as)
                 pg = (pagetable*) pg->pg_next;
 
 		if(pg_prev->pg_inmem == true){
-			//page_free(pg_prev->pg_vaddr);
+			if(pg_prev->pg_paddr != 0){
+			//	page_free(pg_prev->pg_vaddr);
+			}
                 	kfree(pg_prev);
 		}
         }
@@ -211,7 +211,6 @@ as_destroy(struct addrspace *as)
                 kfree(sg_prev);
         }
 	
-	delete_coremap(as);
 	kfree(as);
 }
 

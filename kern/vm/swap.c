@@ -129,6 +129,9 @@ swap_out(struct addrspace* as, vaddr_t va, void* kbuf){
 		if(sw_space[itr].sw_vaddr==0){
 			sw_space[itr].sw_addrspace = as;
 			sw_space[itr].sw_vaddr = va;
+
+			//sw_space[itr].sw_addrspace = kmalloc(sizeof(struct addrspace));
+			//memmove(sw_space[itr].sw_addrspace, as, sizeof(struct addrspace));
 			
 			if(write_page(kbuf, &sw_space[itr].sw_offset, itr)){
 				return 1;
