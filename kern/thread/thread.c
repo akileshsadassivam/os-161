@@ -1281,10 +1281,6 @@ interprocessor_interrupt(void)
 int
 sys_sbrk(userptr_t arg1, int32_t* retval)
 {
-	/*if((int*)arg1 == (int*) 0x40000000 || (int*)arg1 == (int*) 0x80000000){
-		return EINVAL;
-	}*/
-
 	vaddr_t size = (vaddr_t)arg1;
 
 	if((curthread->t_addrspace->as_hpend + size) < curthread->t_addrspace->as_hpstart || size >= 0x80000000){
@@ -1296,7 +1292,6 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 	*retval = curthread->t_addrspace->as_hpend;
 	size = (size % 4 == 0)? size: ((size + 4)/4);		//Rounding size to 4
 
-//	int numpage = size/PAGE_SIZE ? (size/PAGE_SIZE) : ((size == 0) ? 0 : 1);
 	int numpage = size/PAGE_SIZE;
 	if(size%PAGE_SIZE){
 		numpage++;
@@ -1327,8 +1322,6 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 
 		return 0;
 	}
-	
-	//vaddr_t alignvaddr = curthread->t_addrspace->as_hpend; // & PAGE_FRAME;
 
 	for(int page = 0; page < numpage; page++){
 		pagetable* table = curthread->t_addrspace->as_pgtable;
@@ -1346,21 +1339,12 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 			return ENOMEM;
 		}
 
-		//if(alignvaddr == curthread->t_addrspace->as_hpstart){
-			table->pg_vaddr = prevaddr + PAGE_SIZE;
-			table->pg_paddr = 0;
-			//table->pg_inmem = true;
-		//}else {
-		//	table->pg_vaddr = prevaddr + (++page * PAGE_SIZE);
-		//}
-
-		//table->pg_paddr = 0;
+		table->pg_vaddr = prevaddr + PAGE_SIZE;
+		table->pg_paddr = 0;
 		table->pg_next = NULL;
 
 		KASSERT(prev != NULL);
 		prev->pg_next = (struct pagetable*)table;
-
-		//page_alloc(curthread->t_addrspace, table->pg_vaddr, false);	
 	}
 	
 	curthread->t_addrspace->as_hpend += size;

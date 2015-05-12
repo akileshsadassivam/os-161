@@ -3,7 +3,7 @@
 #define _SWAP_H
 
 
-#define MAX_VAL 1000
+#define MAX_VAL 2000
 
 
 typedef struct{
@@ -30,5 +30,7 @@ swap_in(struct addrspace* as, vaddr_t va, void* kbuf);
 int
 swap_out(struct addrspace* as, vaddr_t va, void* kbuf);
 
+void
+swap_clean(struct addrspace* as);
 
 #endif

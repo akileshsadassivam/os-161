@@ -86,6 +86,7 @@ vm_bootstrap(void)
 	}
 
 	bootstrapped = true;
+	swapspace_init();	
 }
 
 int
@@ -131,7 +132,7 @@ alloc_kpages(int npages)
 	
 	if(!bootstrapped){
 		pa = getppages(npages);
-		if (pa==0) {
+		if (pa == 0) {
 			return 0;
 		}
 		return PADDR_TO_KVADDR(pa);
@@ -159,11 +160,21 @@ delete_coremap(struct addrspace* as){
 	coremap* temp = cm_entry;
 	paddr_t buf = firstaddr;
 	for(unsigned int page = 0; page < totalpagecnt;page++){
-		if((temp + page)->cm_addrspace == as){
+		if((temp + page)->cm_addrspace == as && (temp + page)->cm_state != FIXED){
+			while((temp + page)->cm_state == SWAPPING){
+				spinlock_release(&cm_lock);
+				thread_yield();
+				spinlock_acquire(&cm_lock);
+			}
+			
+			struct tlbshootdown tlb;
+		        tlb.ts_addrspace = (temp + page)->cm_addrspace;
+		        tlb.ts_vaddr = (temp + page)->cm_vaddr;
+			vm_tlbshootdown(&tlb);
+		        ipi_tlbshootdown(curthread->t_cpu, &tlb);
+
 			(temp + page)->cm_addrspace = NULL;
 			(temp + page)->cm_state = FREE;
-
-			(temp + page)->cm_vaddr = PADDR_TO_KVADDR(buf);
 		}
 		
 		buf += PAGE_SIZE;
@@ -191,10 +202,10 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		page = make_page_avail(&alloc, 1);
 	}else{
 		alloc = cm_entry + page;
-		//bzero((int*)alloc->cm_vaddr, PAGE_SIZE);
 		bzero((int*)PADDR_TO_KVADDR(firstaddr + (page * PAGE_SIZE)), PAGE_SIZE);
 	}
 
+	KASSERT(spinlock_do_i_hold(&cm_lock));
 	//time_t secs;
 	pagetable* temp = as->as_pgtable;
 
@@ -249,11 +260,12 @@ page_nalloc(int npages)
 		start = make_page_avail(&allock, npages);
 	}else {
 		allock = cm_entry + start;
-		//bzero((int*) allock->cm_vaddr, npages * PAGE_SIZE);
 		bzero((int*)PADDR_TO_KVADDR(firstaddr + (start * PAGE_SIZE)), npages * PAGE_SIZE);
 	}
 
-	vaddr_t result = allock->cm_vaddr;
+	paddr_t paddr = firstaddr + (start * PAGE_SIZE);
+	vaddr_t result = PADDR_TO_KVADDR(paddr);
+	allock->cm_vaddr = result;
 
 	for(int page = 0; page < npages; page++){
 		(allock+page)->cm_state = FIXED;
@@ -273,18 +285,21 @@ page_nalloc(int npages)
 unsigned int
 make_page_avail(coremap** temp, int npages)
 {
+	KASSERT(spinlock_do_i_hold(&cm_lock));
 	uint64_t oldertimestamp = 0;
-        unsigned int victimpage = 0;
+    	unsigned int victimpage = 0;
 
-        for(unsigned int page = 0; page < totalpagecnt; page++){
-        	if((cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_state != SWAPPING){ 
+	for(unsigned int page = 0; page < totalpagecnt; page++){
+		if((cm_entry + page)->cm_state != FIXED && (cm_entry + page)->cm_state != SWAPPING){ 
 			if((oldertimestamp == 0) || (cm_entry + page)->cm_timestamp < oldertimestamp){
 				oldertimestamp = (cm_entry + page)->cm_timestamp;
-	       	                victimpage = page;
+	   	                victimpage = page;
+	   	                KASSERT(spinlock_do_i_hold(&cm_lock));
 			}
-                }
-        }
+	        }
+	}
 
+    	KASSERT(spinlock_do_i_hold(&cm_lock));
 	KASSERT(victimpage != 0);
 	KASSERT((cm_entry + victimpage)->cm_addrspace != NULL);
 
@@ -295,16 +310,24 @@ make_page_avail(coremap** temp, int npages)
 	struct tlbshootdown tlb;
 	tlb.ts_addrspace = (cm_entry + victimpage)->cm_addrspace;
 	tlb.ts_vaddr = (cm_entry + victimpage)->cm_vaddr;
+	
+	vm_tlbshootdown(&tlb);
 	ipi_tlbshootdown(curthread->t_cpu, &tlb);
 	
 	pagetable* pg = (cm_entry + victimpage)->cm_addrspace->as_pgtable;
 	while(pg != NULL){
 		if(pg->pg_vaddr == (cm_entry + victimpage)->cm_vaddr){
-			swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)pg->pg_paddr);
-			(cm_entry + victimpage)->cm_state = CLEAN;
-			
-			bzero((int*)PADDR_TO_KVADDR(pg->pg_paddr), PAGE_SIZE);
+			paddr_t tem = pg->pg_paddr;
+			(void)tem;
 
+			swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)PADDR_TO_KVADDR(tem));
+			(cm_entry + victimpage)->cm_state = CLEAN;
+		
+			if((int*)PADDR_TO_KVADDR(pg->pg_paddr) == (int*)0x5eadbeef){
+				//panic("nothing\n");
+			}	
+
+			bzero((int*)PADDR_TO_KVADDR(tem), PAGE_SIZE);
 			pg->pg_paddr = 0;
 			pg->pg_inmem = false;
 			break;
@@ -322,7 +345,7 @@ make_page_avail(coremap** temp, int npages)
 }
 
 /*Free the page allocate for user process*/
-void
+/*void
 page_free(vaddr_t addr){
 	spinlock_acquire(&cm_lock);
 
@@ -332,8 +355,6 @@ page_free(vaddr_t addr){
 
 			for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
 				(temp + page + npages)->cm_state = FREE;
-				//(temp + page + npages)->cm_addrspace = NULL;
-				//(temp + page + npages)->cm_vaddr = 0;
 
 				struct tlbshootdown tlb;
 			        tlb.ts_addrspace = (temp + page + npages)->cm_addrspace;
@@ -345,7 +366,7 @@ page_free(vaddr_t addr){
 	}
 
 	spinlock_release(&cm_lock);
-}
+}*/
 
 /*Free the page allocated for kernel heap*/
 void 
@@ -360,11 +381,6 @@ free_kpages(vaddr_t addr)
 
 				for(int npages = 0; npages < (cm_entry + page)->cm_npages; npages++){
 					(temp + page + npages)->cm_state = FREE;
-
-					struct tlbshootdown tlb;
-				        tlb.ts_addrspace = (temp + page + npages)->cm_addrspace;
-				        tlb.ts_vaddr = (temp + page + npages)->cm_vaddr;
-				        ipi_tlbshootdown(curthread->t_cpu, &tlb);
 				}
 				break;
 			}
@@ -388,17 +404,12 @@ vm_tlbshootdown_all(void)
 void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
-	uint32_t ehi, elo;
-
 	int spl = splhigh();
 
 	int index = tlb_probe(ts->ts_vaddr, 0);
-        tlb_read(&ehi, &elo, index);
 
 	if(index != -1){
-                if(elo & TLBLO_VALID){
-			tlb_write(TLBHI_INVALID(index), TLBLO_INVALID(), index);
-                }
+		tlb_write(TLBHI_INVALID(index), TLBLO_INVALID(), index);
 	}
 
 	splx(spl);
@@ -436,7 +447,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 						spinlock_acquire(&cm_lock);
 
 						if(table->pg_inmem == false){
-							swap_in(curthread->t_addrspace, faultaddress, (void*)table->pg_paddr);
+							swap_in(curthread->t_addrspace, faultaddress, (void*)PADDR_TO_KVADDR(table->pg_paddr));
 							table->pg_inmem = true;
 						}
 					}

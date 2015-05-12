@@ -118,7 +118,10 @@ spinlock_release(struct spinlock *lk)
 {
 	/* this must work before curcpu initialization */
 	if (CURCPU_EXISTS()) {
-		KASSERT(lk->lk_holder == curcpu->c_self);
+		//KASSERT(lk->lk_holder == curcpu->c_self);
+		if(lk->lk_holder != curcpu->c_self){
+			panic("KASSERT failed\n");
+		}
 	}
 
 	lk->lk_holder = NULL;

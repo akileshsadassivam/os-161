@@ -56,16 +56,10 @@ typedef struct{
 }pagetable;
 
 typedef struct{
-	int pm_read;
-	int pm_write;
-	int pm_exec;
+	int pm_read:1;
+	int pm_write:1;
+	int pm_exec:1;
 }permissions;
-
-typedef struct{
-	int read;
-	int write;
-	struct t_perm *next;
-}t_perm;
 
 typedef struct{
 	vaddr_t sg_vaddr;
@@ -89,10 +83,6 @@ struct addrspace {
 	segment* as_segment;
 	vaddr_t as_hpstart;
 	vaddr_t as_hpend;
-
-	//vaddr_t as_stop;
-
-	//struct addrspace* as_parent;
 #endif
 };
 

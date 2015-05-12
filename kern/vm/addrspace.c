@@ -41,7 +41,14 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
+typedef struct{
+        int read:1;
+        int write:1;
+        struct t_perm *next;
+}t_perm;
+
 t_perm *start,*q;
+extern struct spinlock cm_lock;
 
 struct addrspace *
 as_create(void)
@@ -147,19 +154,16 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		if(strt->pg_paddr != 0){
 			int npages = get_page_count(strt->pg_vaddr);
                 	for(int page = 0; page < npages; page++){
-				/*if(strt->pg_inmem == false){
-					page_alloc(old, strt->pg_vaddr + (page * PAGE_SIZE), false);
-					swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
-					strt->pg_inmem = true;
-				}*/
-
 	                        page_alloc(newas, pg->pg_vaddr + (page * PAGE_SIZE), false);
 				memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
 			}
                	}else{
 			if(strt->pg_inmem == false){
 				page_alloc(old, strt->pg_vaddr, false);
-                                swap_in(old, strt->pg_vaddr, (void*)strt->pg_paddr);
+	
+				spinlock_acquire(&cm_lock);
+                                swap_in(old, strt->pg_vaddr, (void*)PADDR_TO_KVADDR(strt->pg_paddr));
+				spinlock_release(&cm_lock);
                                 strt->pg_inmem = true;
 
 				page_alloc(newas, pg->pg_vaddr, false);
@@ -181,12 +185,12 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
-	if(as == NULL){
-		return;
-	}
 
+	KASSERT(as !=NULL);
 
 	delete_coremap(as);
+	swap_clean(as);
+
 	pagetable *pg_prev,*pg;
         pg=as->as_pgtable;
         
@@ -194,12 +198,8 @@ as_destroy(struct addrspace *as)
                 pg_prev = pg;
                 pg = (pagetable*) pg->pg_next;
 
-		if(pg_prev->pg_inmem == true){
-			if(pg_prev->pg_paddr != 0){
-			//	page_free(pg_prev->pg_vaddr);
-			}
-                	kfree(pg_prev);
-		}
+               	kfree(pg_prev);
+		pg_prev = NULL;
         }
         
         segment *sg_prev, *sg;
@@ -221,7 +221,7 @@ as_activate(struct addrspace *as)
 	 * Write this.
 	 */
 
-	(void)as;  // suppress warning until code gets written
+	(void)as;
 	vm_tlbshootdown_all();
 }
 
@@ -264,9 +264,9 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	sg->sg_numpage = numpage;
 	sg->sg_vaddr = vaddr;
 	
-	sg->sg_perm.pm_read=readable;
-	sg->sg_perm.pm_write = writeable;
-	sg->sg_perm.pm_exec = executable;
+	sg->sg_perm.pm_read = readable & 0x4;
+	sg->sg_perm.pm_write = writeable & 0x2;
+	sg->sg_perm.pm_exec = executable & 0x1;
 	
 	if(as->as_segment == NULL){
 		as->as_segment = sg;
@@ -305,20 +305,9 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	if(!isstack) {
 		as->as_hpstart = as->as_hpend = vaddr + sz;
-	}else{
-		//as->as_stop = vaddr;
 	}
 
 	return 0;
-/*
-	(void)as;
-	(void)vaddr;
-	(void)sz;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-*/
-//	return EUNIMP;
 }
 
 int
@@ -350,8 +339,8 @@ as_prepare_load(struct addrspace *as)
 
 		p->read = sg->sg_perm.pm_read;
 		p->write = sg->sg_perm.pm_write;
-		sg->sg_perm.pm_read = 4;
-		sg->sg_perm.pm_write = 2;
+		sg->sg_perm.pm_read = 1;
+		sg->sg_perm.pm_write = 1;
 		p->next = NULL;
 
 		if(start == NULL){
