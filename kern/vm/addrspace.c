@@ -103,6 +103,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		pg->pg_vaddr = strt->pg_vaddr;
 		pg->pg_paddr = 0;
 		pg->pg_inmem = true;
+		pg->pg_inswap = false;
 
 		pg->pg_next = NULL;
 		strt = (pagetable*)strt->pg_next;
@@ -149,8 +150,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	pg = newas->as_pgtable;
 	strt = old->as_pgtable;
 
+	spinlock_acquire(&cm_lock);
 	while(pg != NULL){
-
 		if(strt->pg_paddr != 0){
 			int npages = get_page_count(strt->pg_vaddr);
                 	for(int page = 0; page < npages; page++){
@@ -161,19 +162,23 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			if(strt->pg_inmem == false){
 				page_alloc(old, strt->pg_vaddr, false);
 	
-				spinlock_acquire(&cm_lock);
+				//spinlock_acquire(&cm_lock);
+				
+				set_swapin(old, strt->pg_vaddr);
                                 swap_in(old, strt->pg_vaddr, (void*)PADDR_TO_KVADDR(strt->pg_paddr));
-				spinlock_release(&cm_lock);
+				//spinlock_release(&cm_lock);
                                 strt->pg_inmem = true;
 
 				page_alloc(newas, pg->pg_vaddr, false);
 	                	memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
+				revert_swapin(old, strt->pg_vaddr);
 			}
 		}
 
 		strt = (pagetable*)strt->pg_next;
 		pg = (pagetable*)pg->pg_next;
 	}
+	spinlock_release(&cm_lock);
 
 	*ret = newas;
 	return 0;
@@ -188,6 +193,7 @@ as_destroy(struct addrspace *as)
 
 	KASSERT(as !=NULL);
 
+	//vm_tlbshootdown_all();
 	delete_coremap(as);
 	swap_clean(as);
 
@@ -289,6 +295,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		pg->pg_vaddr = va;
 		pg->pg_paddr = 0;	
 		pg->pg_inmem = true;
+		pg->pg_inswap = false;
 		
 		if(as->as_pgtable == NULL){
 			as->as_pgtable = pg;
@@ -304,7 +311,8 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	}
 
 	if(!isstack) {
-		as->as_hpstart = as->as_hpend = vaddr + sz;
+		as->as_hpstart = vaddr + sz;
+		as->as_hpend = vaddr + sz;
 	}
 
 	return 0;

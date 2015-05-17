@@ -93,4 +93,8 @@ paddr_t get_first_page(void);
 /*delete the content of the given address space*/
 void delete_coremap(struct addrspace*);
 
+void check_for_swap(vaddr_t);
+
+void set_swapin(struct addrspace*, vaddr_t);
+void revert_swapin(struct addrspace*, vaddr_t);
 #endif /* _VM_H_ */

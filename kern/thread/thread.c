@@ -1313,10 +1313,13 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 			}
 
 			table->pg_vaddr = curthread->t_addrspace->as_hpend;
+			table->pg_paddr = 0;
 			table->pg_next = NULL;
+			table->pg_inmem = true;
+			table->pg_inswap = false;
 
 			prev->pg_next = (struct pagetable*) table;
-			page_alloc(curthread->t_addrspace, curthread->t_addrspace->as_hpend, false);
+			//page_alloc(curthread->t_addrspace, curthread->t_addrspace->as_hpend, false);
 		}
 		curthread->t_addrspace->as_hpend += size;
 
@@ -1342,6 +1345,8 @@ sys_sbrk(userptr_t arg1, int32_t* retval)
 		table->pg_vaddr = prevaddr + PAGE_SIZE;
 		table->pg_paddr = 0;
 		table->pg_next = NULL;
+		table->pg_inmem = true;
+		table->pg_inswap = false;
 
 		KASSERT(prev != NULL);
 		prev->pg_next = (struct pagetable*)table;

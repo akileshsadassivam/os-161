@@ -3,7 +3,7 @@
 #define _SWAP_H
 
 
-#define MAX_VAL 2000
+#define MAX_VAL 10000
 
 
 typedef struct{

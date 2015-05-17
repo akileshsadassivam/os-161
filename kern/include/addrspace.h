@@ -52,6 +52,7 @@ typedef struct{
 	vaddr_t pg_vaddr;
 	paddr_t pg_paddr;
 	bool pg_inmem;
+	bool pg_inswap;
 	struct pagetable* pg_next;
 }pagetable;
 
