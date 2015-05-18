@@ -60,17 +60,10 @@ as_create(void)
 		return NULL;
 	}
 
-	/*
-	 * Initialize as needed.
-	 */
-	
-	
-	//as->as_parent = NULL;
 	as->as_segment = NULL;
 	as->as_pgtable = NULL;
 	as->as_hpstart = as->as_hpend = 0;
-	//as->as_stop = 0;
-
+	
 	return as;
 }
 
@@ -83,9 +76,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	if (newas==NULL) {
 		return ENOMEM;
 	}
-
-	//Mark the parent in the new address space
-	//newas->as_parent = old;
 
 	/*
 	 * traverse through lisked list, copy contents from one to another
@@ -162,12 +152,9 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 			if(strt->pg_inmem == false){
 				page_alloc(old, strt->pg_vaddr, false);
 	
-				//spinlock_acquire(&cm_lock);
-				
 				set_swapin(old, strt->pg_vaddr);
                                 swap_in(old, strt->pg_vaddr, (void*)PADDR_TO_KVADDR(strt->pg_paddr));
-				//spinlock_release(&cm_lock);
-                                strt->pg_inmem = true;
+				strt->pg_inmem = true;
 
 				page_alloc(newas, pg->pg_vaddr, false);
 	                	memmove((void*)PADDR_TO_KVADDR(pg->pg_paddr), (void*)PADDR_TO_KVADDR(strt->pg_paddr), PAGE_SIZE);
@@ -193,7 +180,6 @@ as_destroy(struct addrspace *as)
 
 	KASSERT(as !=NULL);
 
-	//vm_tlbshootdown_all();
 	delete_coremap(as);
 	swap_clean(as);
 
@@ -223,10 +209,6 @@ as_destroy(struct addrspace *as)
 void
 as_activate(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
-
 	(void)as;
 	vm_tlbshootdown_all();
 }
@@ -245,10 +227,6 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable, bool isstack)
 {
-	/*
-	 * Write this.
-	 */
-
 	/*these lines are for alignment. check if they have to be put after pageallod or before that*/
 	int numpage;
 	vaddr_t va;
@@ -307,7 +285,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 			}
 			p->pg_next = (struct pagetable*)pg;
 		}
-	//	page_alloc(as, va, false);
 	}
 
 	if(!isstack) {
@@ -321,19 +298,9 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
-	
 	if(as == NULL){
 		return 0;
 	}
-
-	if(start != NULL){
-		// we are officially screwed
-	}
-
-	//int stacknpages = get_total_page_count()/4;
 
 	as_define_region(as, USERSTACK-(12 * PAGE_SIZE), 12 * PAGE_SIZE, 0x4, 0x2, 0, true); 
 
@@ -362,17 +329,12 @@ as_prepare_load(struct addrspace *as)
 		sg = (segment*)sg->sg_next;
 	}
 
-//	(void)as;
 	return 0;
 }
 
 int
 as_complete_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
-	
 	t_perm *p = start;
 	segment *sg = as->as_segment;
 	while(sg!=NULL){
@@ -383,17 +345,13 @@ as_complete_load(struct addrspace *as)
 		start = p;
 		sg = (segment*)sg->sg_next;
 	}
-//	(void)as;
+
 	return 0;
 }
 
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * Write this.
-	 */
-
 	(void)as;
 
 	/* Initial user-level stack pointer */
