@@ -52,7 +52,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 coremap* cm_entry;
 bool bootstrapped = false;
 unsigned int totalpagecnt;
-struct spinlock cm_lock;// = SPINLOCK_INITIALIZER;
+struct spinlock cm_lock;
 paddr_t firstaddr;
 uint32_t counter;
 
@@ -92,7 +92,6 @@ vm_bootstrap(void)
 int
 get_page_count(vaddr_t address)
 {
-	//spinlock_acquire(&cm_lock);
 	coremap* temp = cm_entry;
 
 	unsigned int count = 0;
@@ -104,8 +103,7 @@ get_page_count(vaddr_t address)
 	}
 
 	int result = (temp+count)->cm_npages;
-	//spinlock_release(&cm_lock);
-
+	
 	return result;
 }
 
@@ -182,18 +180,12 @@ delete_coremap(struct addrspace* as){
 	paddr_t buf = firstaddr;
 	for(unsigned int page = 0; page < totalpagecnt;page++){
 		if((temp + page)->cm_addrspace == as && (temp + page)->cm_state != FIXED){
-			/*while((temp + page)->cm_state == SWAPPING){
-				spinlock_release(&cm_lock);
-				thread_yield();
-				spinlock_acquire(&cm_lock);
-			}*/
 			
 			struct tlbshootdown tlb;
 		        tlb.ts_addrspace = (temp + page)->cm_addrspace;
 		        tlb.ts_vaddr = (temp + page)->cm_vaddr;
 			vm_tlbshootdown(&tlb);
-		        //ipi_tlbshootdown(curthread->t_cpu, &tlb);
-			ipi_broadcast(IPI_TLBSHOOTDOWN);
+		        ipi_broadcast(IPI_TLBSHOOTDOWN);
 
 			(temp + page)->cm_addrspace = NULL;
 			(temp + page)->cm_state = FREE;
@@ -210,7 +202,6 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 	(void)forstack;
 	bool ispagefree = false;
 	unsigned int page;
-	//spinlock_acquire(&cm_lock);
 	
 	for(page = 0; page < totalpagecnt; page++){
 		if((cm_entry + page)->cm_state == FREE){
@@ -227,7 +218,6 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 		bzero((int*)PADDR_TO_KVADDR(firstaddr + (page * PAGE_SIZE)), PAGE_SIZE);
 	}
 
-	//time_t secs;
 	pagetable* temp = as->as_pgtable;
 
 	while(temp != NULL && temp->pg_vaddr != va){
@@ -242,12 +232,10 @@ page_alloc(struct addrspace* as, vaddr_t va, bool forstack)
 
 	alloc->cm_addrspace = as;
 	alloc->cm_vaddr = va;
-	//gettime(&secs, &alloc->cm_timestamp);
+	
 	alloc->cm_timestamp = ++counter;
 	alloc->cm_state = DIRTY;
 	alloc->cm_npages = 1;
-
-	//spinlock_release(&cm_lock);
 }
 
 vaddr_t
@@ -291,12 +279,9 @@ page_nalloc(int npages)
 	for(int page = 0; page < npages; page++){
 		(allock+page)->cm_state = FIXED;
 
-		//time_t secs;
-		//gettime(&secs, &(allock+page)->cm_timestamp);
 		(allock+page)->cm_timestamp = ++counter;
 	}
 	
-	//allock->cm_addrspace = NULL;
 	allock->cm_npages = npages;
 	spinlock_release(&cm_lock);
 	return result;
@@ -334,19 +319,17 @@ make_page_avail(coremap** temp, int npages)
 			pg->pg_paddr = 0;
 			pg->pg_inmem = false;
 
-	struct tlbshootdown tlb;
-	tlb.ts_addrspace = (cm_entry + victimpage)->cm_addrspace;
-	tlb.ts_vaddr = (cm_entry + victimpage)->cm_vaddr;
-
-	vm_tlbshootdown(&tlb);
-	//ipi_tlbshootdown(curthread->t_cpu, &tlb);
-	ipi_broadcast(IPI_TLBSHOOTDOWN);
+			struct tlbshootdown tlb;
+			tlb.ts_addrspace = (cm_entry + victimpage)->cm_addrspace;
+			tlb.ts_vaddr = (cm_entry + victimpage)->cm_vaddr;
+		
+			vm_tlbshootdown(&tlb);
+			ipi_broadcast(IPI_TLBSHOOTDOWN);
 	
 			(cm_entry + victimpage)->cm_state = SWAPPING;
 			swap_out((cm_entry + victimpage)->cm_addrspace, pg->pg_vaddr, (void*)PADDR_TO_KVADDR(tem));
 			(cm_entry + victimpage)->cm_state = CLEAN;
-			//pg->pg_inswap = false;
-		
+			
 			bzero((int*)PADDR_TO_KVADDR(tem), PAGE_SIZE);
 			break;
 		}
@@ -394,18 +377,11 @@ void
 vm_tlbshootdown(const struct tlbshootdown *ts)
 {
 	int spl = splhigh();
-	//uint32_t ehi, elo;
-
+	
 	int index = tlb_probe(ts->ts_vaddr, 0);
 
 	if(index != -1){
-
-	/*for(int cnt = 0; cnt < NUM_TLB; cnt++){
-		tlb_read(&ehi, &elo, cnt);
-		
-		if(ehi == ts->ts_vaddr){*/
-			tlb_write(TLBHI_INVALID(index), TLBLO_INVALID(), index);
-		//}
+		tlb_write(TLBHI_INVALID(index), TLBLO_INVALID(), index);
 	}
 
 	splx(spl);
@@ -453,23 +429,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			
 			while(table != NULL){
 				if(table->pg_vaddr == faultaddress){
-					/*while(table->pg_inswap == true){
-						spinlock_release(&cm_lock);
-						thread_yield();
-						spinlock_acquire(&cm_lock);
-					}*/
 					check_for_swap(faultaddress);
-
-					if((int*)table->pg_next == (int*) 0xdeadbeef){
-						spinlock_release(&cm_lock);
-						return 0;
-					}
-
+					
 					if(table->pg_paddr == 0){
-						//spinlock_release(&cm_lock);
 						page_alloc(curthread->t_addrspace, faultaddress, false);
-						//spinlock_acquire(&cm_lock);
-
+					
 						if(table->pg_inmem == false){
 							swap_in(curthread->t_addrspace, faultaddress, (void*)PADDR_TO_KVADDR(table->pg_paddr));
 							table->pg_inmem = true;
@@ -495,22 +459,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	spl = splhigh();
 
-	/*int index = tlb_probe(faultaddress, 0);
-	tlb_read(&ehi, &elo, index);
-
-	if(index != -1){
-		if(elo & TLBLO_VALID){
-        		ehi = faultaddress;
-        		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-        		tlb_write(ehi, elo, index);
-		}else{
-			return EFAULT;
-		}
-	}else{*/
-        	ehi = faultaddress;
-        	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-		tlb_random(ehi, elo);
-	//}
+	ehi = faultaddress;
+	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	tlb_random(ehi, elo);
 
         splx(spl);
 	spinlock_release(&cm_lock);
